@@ -42,7 +42,7 @@ export default function JobsPage() {
 
   const fetchResumes = async () => {
     try {
-      const res = await api.get('/resumes/');
+      const res = await api.get('/resumes/my');
       setResumes(res.data || []);
     } catch (err) {
       console.error('Fetch resumes error:', err);
@@ -163,18 +163,22 @@ export default function JobsPage() {
                 <div className="mt-4">
                   {applying === job.id ? (
                     <div className="space-y-3">
-                      {resumes.length > 0 && (
-                        <div>
-                          <label className="text-sm font-medium text-gray-700 mb-1 block">Select Resume</label>
+                      <div>
+                        <label className="text-sm font-medium text-gray-700 mb-1 block">Select Resume</label>
+                        {resumes.length > 0 ? (
                           <select value={selectedResume} onChange={(e) => setSelectedResume(e.target.value)}
                             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 outline-none">
                             <option value="">No resume attached</option>
                             {resumes.map(r => (
-                              <option key={r.id} value={r.id}>{r.title || r.filename || 'Resume'}</option>
+                              <option key={r.id} value={r.id}>{r.original_filename || 'Resume'}</option>
                             ))}
                           </select>
-                        </div>
-                      )}
+                        ) : (
+                          <p className="text-xs text-amber-600 bg-amber-50 px-3 py-2 rounded-lg">
+                            No resumes uploaded yet. Upload one from your Profile page to attach it.
+                          </p>
+                        )}
+                      </div>
                       <textarea
                         value={coverLetter}
                         onChange={(e) => setCoverLetter(e.target.value)}

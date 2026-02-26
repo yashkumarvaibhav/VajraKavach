@@ -4,6 +4,7 @@ Logs all incoming requests for audit trail.
 """
 
 from fastapi import Request
+from app.utils.ip import get_client_ip
 from starlette.middleware.base import BaseHTTPMiddleware
 import time
 import logging
@@ -23,7 +24,7 @@ class AuditMiddleware(BaseHTTPMiddleware):
             f"{request.method} {request.url.path} "
             f"status={response.status_code} "
             f"duration={duration:.3f}s "
-            f"ip={request.client.host if request.client else 'unknown'}"
+            f"ip={get_client_ip(request)}"
         )
 
         return response

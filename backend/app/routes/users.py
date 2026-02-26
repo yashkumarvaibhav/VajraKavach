@@ -20,6 +20,7 @@ from app.schemas.user import (
 )
 from app.dependencies import get_current_user
 from app.services.audit_service import create_audit_log
+from app.utils.ip import get_client_ip
 from app.config import settings
 
 router = APIRouter(prefix="/api/users", tags=["Users & Profiles"])
@@ -146,7 +147,7 @@ async def update_my_account(
         resource="user",
         resource_id=str(current_user.id),
         details={"updated_fields": update.model_dump(exclude_unset=True)},
-        ip_address=request.client.host if request.client else None,
+        ip_address=get_client_ip(request),
     )
 
     return UserResponse(
@@ -204,7 +205,7 @@ async def upload_profile_picture(
         user_id=str(current_user.id),
         resource="user_profile",
         details={"filename": filename, "size_bytes": len(contents)},
-        ip_address=request.client.host if request.client else None,
+        ip_address=get_client_ip(request),
     )
 
     return {"url": f"/api/users/me/profile-picture/{filename}"}
@@ -235,6 +236,14 @@ async def get_my_profile(
     if not profile:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found")
 
+    # Compute view_count from ProfileView records (not the stale column)
+    from sqlalchemy import func as sa_func
+    vc_result = await db.execute(
+        select(sa_func.coalesce(sa_func.sum(ProfileView.visit_count), 0))
+        .where(ProfileView.profile_user_id == current_user.id)
+    )
+    computed_view_count = int(vc_result.scalar() or 0)
+
     return UserProfileResponse(
         id=str(profile.id),
         user_id=str(profile.user_id),
@@ -249,7 +258,7 @@ async def get_my_profile(
         skills=profile.skills,
         profile_picture_url=profile.profile_picture_url,
         privacy_settings=profile.privacy_settings,
-        view_count=profile.view_count,
+        view_count=computed_view_count,
         show_viewers=profile.show_viewers,
     )
 
@@ -282,8 +291,16 @@ async def update_my_profile(
         resource="user_profile",
         resource_id=str(profile.id),
         details={"updated_fields": list(update_data.keys())},
-        ip_address=request.client.host if request.client else None,
+        ip_address=get_client_ip(request),
     )
+
+    # Compute view_count from ProfileView records
+    from sqlalchemy import func as sa_func
+    vc_result = await db.execute(
+        select(sa_func.coalesce(sa_func.sum(ProfileView.visit_count), 0))
+        .where(ProfileView.profile_user_id == current_user.id)
+    )
+    computed_view_count = int(vc_result.scalar() or 0)
 
     return UserProfileResponse(
         id=str(profile.id),
@@ -299,7 +316,7 @@ async def update_my_profile(
         skills=profile.skills,
         profile_picture_url=profile.profile_picture_url,
         privacy_settings=profile.privacy_settings,
-        view_count=profile.view_count,
+        view_count=computed_view_count,
         show_viewers=profile.show_viewers,
     )
 
@@ -322,10 +339,8 @@ async def view_user_profile(
     user_result = await db.execute(select(User).where(User.id == user_id))
     target_user = user_result.scalar_one_or_none()
 
-    # Increment view count and record viewer (only if show_viewers is enabled)
-    if str(current_user.id) != user_id and profile.show_viewers:
-        profile.view_count = (profile.view_count or 0) + 1
-
+    # Record viewer (always track views; show_viewers only controls display)
+    if str(current_user.id) != user_id:
         # Upsert profile view record (update timestamp and visit count if already viewed)
         existing_view = await db.execute(
             select(ProfileView).where(
@@ -379,9 +394,18 @@ async def view_user_profile(
         "skills": profile.skills,
         "profile_picture_url": profile.profile_picture_url,
         "privacy_settings": None,
-        "view_count": profile.view_count if profile.show_viewers else 0,
+        "view_count": 0,
         "show_viewers": profile.show_viewers,
     }
+
+    # Compute view_count from ProfileView records
+    if profile.show_viewers:
+        from sqlalchemy import func as sa_func
+        vc_result = await db.execute(
+            select(sa_func.coalesce(sa_func.sum(ProfileView.visit_count), 0))
+            .where(ProfileView.profile_user_id == uuid.UUID(user_id))
+        )
+        response_data["view_count"] = int(vc_result.scalar() or 0)
 
     is_owner = str(current_user.id) == user_id
     is_admin = current_user.role.value == "admin"
@@ -484,7 +508,7 @@ async def send_connection_request(
         user_id=str(current_user.id),
         resource="connection",
         resource_id=str(conn.id),
-        ip_address=request.client.host if request.client else None,
+        ip_address=get_client_ip(request),
     )
 
     return await _enrich_connection(db, conn, str(current_user.id))

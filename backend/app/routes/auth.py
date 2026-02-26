@@ -27,6 +27,7 @@ from app.services.totp_service import (
 from app.services.pki_service import generate_rsa_key_pair
 from app.services.audit_service import create_audit_log
 from app.dependencies import get_current_user_pre_totp, get_current_user
+from app.utils.ip import get_client_ip
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 
@@ -82,7 +83,7 @@ async def register(
         resource="user",
         resource_id=str(user.id),
         details={"email": req.email, "role": role.value},
-        ip_address=request.client.host if request.client else None,
+        ip_address=get_client_ip(request),
     )
 
     totp_uri = get_totp_uri(totp_secret, req.email)
@@ -126,7 +127,7 @@ async def setup_verify(
         user_id=str(user.id),
         resource="user",
         resource_id=str(user.id),
-        ip_address=request.client.host if request.client else None,
+        ip_address=get_client_ip(request),
     )
 
     return {"message": "TOTP verified successfully! You can now log in."}
@@ -147,7 +148,7 @@ async def login(
             db=db,
             action="user.login_failed",
             details={"email": req.email},
-            ip_address=request.client.host if request.client else None,
+            ip_address=get_client_ip(request),
         )
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
 
@@ -164,7 +165,7 @@ async def login(
         user_id=str(user.id),
         resource="user",
         resource_id=str(user.id),
-        ip_address=request.client.host if request.client else None,
+        ip_address=get_client_ip(request),
     )
 
     user.last_login = datetime.utcnow()
@@ -206,7 +207,7 @@ async def verify_totp_endpoint(
             user_id=str(current_user.id),
             resource="user",
             resource_id=str(current_user.id),
-            ip_address=request.client.host if request.client else None,
+            ip_address=get_client_ip(request),
         )
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid TOTP token")
 
@@ -228,7 +229,7 @@ async def verify_totp_endpoint(
         user_id=str(current_user.id),
         resource="user",
         resource_id=str(current_user.id),
-        ip_address=request.client.host if request.client else None,
+        ip_address=get_client_ip(request),
     )
 
     return TokenResponse(
@@ -288,7 +289,7 @@ async def change_password(
         user_id=str(current_user.id),
         resource="user",
         resource_id=str(current_user.id),
-        ip_address=request.client.host if request.client else None,
+        ip_address=get_client_ip(request),
     )
 
     return {"message": "Password changed successfully"}
@@ -306,7 +307,7 @@ async def get_me(request: Request, current_user: User = Depends(get_current_user
         is_suspended=current_user.is_suspended,
         totp_verified=current_user.totp_verified,
         created_at=current_user.created_at,
-        ip_address=request.client.host if request.client else None,
+        ip_address=get_client_ip(request),
     )
 
 
@@ -332,7 +333,7 @@ async def forgot_password(
             action="user.forgot_password_failed",
             user_id=str(user.id),
             details={"email": req.email, "reason": "invalid_totp"},
-            ip_address=request.client.host if request.client else None,
+            ip_address=get_client_ip(request),
         )
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid TOTP token")
 
@@ -344,7 +345,7 @@ async def forgot_password(
         user_id=str(user.id),
         resource="user",
         resource_id=str(user.id),
-        ip_address=request.client.host if request.client else None,
+        ip_address=get_client_ip(request),
     )
 
     return {"message": "Password reset successfully. You can now log in with your new password."}

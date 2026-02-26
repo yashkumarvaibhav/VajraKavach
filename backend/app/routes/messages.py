@@ -1,20 +1,25 @@
 """
 VajraKavach — Message Routes
-E2E encrypted messaging (1-to-1 and group).
+E2E encrypted messaging (1-to-1 and group), server-side encrypted announcements.
 Server stores ONLY ciphertext.
 """
 
 import uuid
+import base64
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_, and_, func
 
 from app.database import get_db
 from app.models.message import Message, Conversation, ConversationMember
+from app.models.announcement import Announcement
 from app.models.user import User
 from app.schemas.message import MessageSend, MessageResponse, ConversationResponse, GroupCreate, GroupMemberResponse
-from app.dependencies import get_current_user
+from app.schemas.announcement import AnnouncementCreate, AnnouncementResponse
+from app.dependencies import get_current_user, require_role
 from app.services.audit_service import create_audit_log
+from app.services.encryption_service import encrypt_data, decrypt_data
+from app.utils.ip import get_client_ip
 
 router = APIRouter(prefix="/api/messages", tags=["Messaging"])
 
@@ -135,7 +140,7 @@ async def send_message(
         resource="message",
         resource_id=str(message.id),
         details={"conversation_id": conversation_id, "recipient_id": req.recipient_id},
-        ip_address=request.client.host if request.client else None,
+        ip_address=get_client_ip(request),
     )
 
     return MessageResponse(
@@ -447,7 +452,7 @@ async def create_group(
         resource="conversation",
         resource_id=str(conv.id),
         details={"name": req.name, "member_count": added},
-        ip_address=request.client.host if request.client else None,
+        ip_address=get_client_ip(request),
     )
 
     return ConversationResponse(
@@ -573,3 +578,119 @@ async def remove_group_member(
 
     await db.delete(member)
     await db.flush()
+
+
+# ─── Admin Announcements (Server-Side Encrypted) ──────────────────
+
+@router.post("/announcements", response_model=AnnouncementResponse, status_code=status.HTTP_201_CREATED)
+async def create_announcement(
+    req: AnnouncementCreate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role("admin")),
+):
+    """Create a server-side encrypted announcement (admin only).
+    The title and content are encrypted at rest using Fernet (AES)."""
+    # Encrypt title and content with server Fernet key
+    title_enc = base64.b64encode(encrypt_data(req.title.encode("utf-8"))).decode("ascii")
+    content_enc = base64.b64encode(encrypt_data(req.content.encode("utf-8"))).decode("ascii")
+
+    announcement = Announcement(
+        id=uuid.uuid4(),
+        sender_id=current_user.id,
+        title_encrypted=title_enc,
+        content_encrypted=content_enc,
+        is_active=True,
+    )
+    db.add(announcement)
+    await db.flush()
+
+    await create_audit_log(
+        db=db,
+        action="announcement.create",
+        user_id=str(current_user.id),
+        resource="announcement",
+        resource_id=str(announcement.id),
+        details={"title_length": len(req.title), "server_encrypted": True},
+        ip_address=get_client_ip(request),
+    )
+
+    return AnnouncementResponse(
+        id=str(announcement.id),
+        sender_id=str(announcement.sender_id),
+        sender_name=current_user.full_name,
+        title=req.title,
+        content=req.content,
+        is_active=announcement.is_active,
+        created_at=announcement.created_at,
+    )
+
+
+@router.get("/announcements", response_model=list[AnnouncementResponse])
+async def list_announcements(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """List all active announcements. Server decrypts on the fly for authorized users."""
+    result = await db.execute(
+        select(Announcement)
+        .where(Announcement.is_active == True)
+        .order_by(Announcement.created_at.desc())
+    )
+    announcements = result.scalars().all()
+
+    responses = []
+    for a in announcements:
+        try:
+            title = decrypt_data(base64.b64decode(a.title_encrypted)).decode("utf-8")
+            content = decrypt_data(base64.b64decode(a.content_encrypted)).decode("utf-8")
+        except Exception:
+            title = "[Decryption error]"
+            content = "[Could not decrypt announcement]"
+
+        # Get sender name
+        sender_name = None
+        sender_res = await db.execute(select(User).where(User.id == a.sender_id))
+        sender = sender_res.scalar_one_or_none()
+        if sender:
+            sender_name = sender.full_name
+
+        responses.append(AnnouncementResponse(
+            id=str(a.id),
+            sender_id=str(a.sender_id),
+            sender_name=sender_name,
+            title=title,
+            content=content,
+            is_active=a.is_active,
+            created_at=a.created_at,
+        ))
+
+    return responses
+
+
+@router.delete("/announcements/{announcement_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_announcement(
+    announcement_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role("admin")),
+):
+    """Deactivate an announcement (admin only)."""
+    result = await db.execute(
+        select(Announcement).where(Announcement.id == announcement_id)
+    )
+    announcement = result.scalar_one_or_none()
+    if not announcement:
+        raise HTTPException(status_code=404, detail="Announcement not found")
+
+    announcement.is_active = False
+
+    await create_audit_log(
+        db=db,
+        action="announcement.delete",
+        user_id=str(current_user.id),
+        resource="announcement",
+        resource_id=str(announcement.id),
+        details={"deactivated": True},
+        ip_address=get_client_ip(request),
+    )

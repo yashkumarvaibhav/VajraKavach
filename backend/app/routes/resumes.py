@@ -18,6 +18,7 @@ from app.dependencies import get_current_user
 from app.services.resume_service import save_encrypted_resume, read_decrypted_resume
 from app.services.pki_service import verify_signature
 from app.services.audit_service import create_audit_log
+from app.utils.ip import get_client_ip
 from app.services.totp_service import verify_totp
 
 router = APIRouter(prefix="/api/resumes", tags=["Resumes"])
@@ -71,7 +72,7 @@ async def upload_resume(
         resource="resume",
         resource_id=str(resume.id),
         details={"filename": meta["original_filename"], "hash": meta["file_hash"]},
-        ip_address=request.client.host if request.client else None,
+        ip_address=get_client_ip(request),
     )
 
     return ResumeResponse(
@@ -135,9 +136,27 @@ async def download_resume(
 
     is_owner = str(resume.user_id) == str(current_user.id)
     is_admin = current_user.role.value == "admin"
-    is_recruiter = current_user.role.value == "recruiter"
 
-    if not (is_owner or is_admin or is_recruiter):
+    # Authorized recruiter: must have posted a job that this resume's owner applied to with this resume
+    is_authorized_recruiter = False
+    if current_user.role.value == "recruiter":
+        from app.models.application import Application
+        from app.models.job import Job
+        from app.models.company import Company
+        auth_result = await db.execute(
+            select(Application.id)
+            .join(Job, Application.job_id == Job.id)
+            .join(Company, Job.company_id == Company.id)
+            .where(
+                Application.resume_id == uuid.UUID(resume_id),
+                Application.user_id == resume.user_id,
+                Company.admin_id == current_user.id,
+            )
+            .limit(1)
+        )
+        is_authorized_recruiter = auth_result.scalar_one_or_none() is not None
+
+    if not (is_owner or is_admin or is_authorized_recruiter):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
     try:
@@ -152,7 +171,7 @@ async def download_resume(
         resource="resume",
         resource_id=str(resume.id),
         details={"filename": resume.original_filename, "downloader_role": current_user.role.value, "totp_verified": True},
-        ip_address=request.client.host if request.client else None,
+        ip_address=get_client_ip(request),
     )
 
     return Response(
@@ -233,7 +252,7 @@ async def delete_resume(
         resource="resume",
         resource_id=str(resume.id),
         details={"filename": resume.original_filename},
-        ip_address=request.client.host if request.client else None,
+        ip_address=get_client_ip(request),
     )
 
     await db.delete(resume)

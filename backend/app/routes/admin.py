@@ -16,6 +16,7 @@ from app.models.audit import AuditLog
 from app.schemas.user import UserResponse
 from app.dependencies import require_role
 from app.services.audit_service import create_audit_log, verify_audit_chain
+from app.utils.ip import get_client_ip
 from app.services.auth_service import hash_password
 from app.services.totp_service import generate_totp_secret, get_totp_uri, generate_qr_code_base64
 from app.services.pki_service import generate_rsa_key_pair
@@ -116,7 +117,7 @@ async def suspend_user(
         resource="user",
         resource_id=str(user.id),
         details={"target_email": user.email},
-        ip_address=request.client.host if request.client else None,
+        ip_address=get_client_ip(request),
     )
 
     return {"message": f"User {user.email} has been suspended"}
@@ -145,7 +146,7 @@ async def activate_user(
         resource="user",
         resource_id=str(user.id),
         details={"target_email": user.email},
-        ip_address=request.client.host if request.client else None,
+        ip_address=get_client_ip(request),
     )
 
     return {"message": f"User {user.email} has been reactivated"}
@@ -174,7 +175,7 @@ async def delete_user(
         resource="user",
         resource_id=str(user.id),
         details={"target_email": user.email},
-        ip_address=request.client.host if request.client else None,
+        ip_address=get_client_ip(request),
     )
 
     await db.delete(user)
@@ -228,7 +229,7 @@ async def create_admin(
         resource="user",
         resource_id=str(admin_id),
         details={"email": req.email, "created_by": current_user.email},
-        ip_address=request.client.host if request.client else None,
+        ip_address=get_client_ip(request),
     )
 
     totp_uri = get_totp_uri(totp_secret, req.email)
@@ -269,7 +270,7 @@ async def promote_to_admin(
         resource="user",
         resource_id=str(user.id),
         details={"email": user.email, "old_role": old_role, "new_role": "admin"},
-        ip_address=request.client.host if request.client else None,
+        ip_address=get_client_ip(request),
     )
 
     return {"message": f"User {user.email} has been promoted to admin"}
@@ -304,7 +305,7 @@ async def demote_from_admin(
         resource="user",
         resource_id=str(user.id),
         details={"email": user.email, "old_role": "admin", "new_role": "user"},
-        ip_address=request.client.host if request.client else None,
+        ip_address=get_client_ip(request),
     )
 
     return {"message": f"Admin privileges removed from {user.email}"}
@@ -449,7 +450,37 @@ async def admin_delist_job(
         resource="job",
         resource_id=str(job.id),
         details={"is_active": job.is_active, "title": job.title},
-        ip_address=request.client.host if request.client else None,
+        ip_address=get_client_ip(request),
     )
 
     return {"message": f"Job {'activated' if job.is_active else 'delisted'}", "is_active": job.is_active}
+
+
+# ── Admin Resume Management ──────────────────────────────────────────
+
+@router.get("/resumes")
+async def list_all_resumes(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role("admin")),
+):
+    """List all resumes (admin only). Download requires TOTP via /api/resumes/{id}/download."""
+    from app.models.resume import Resume
+    result = await db.execute(
+        select(Resume, User.full_name, User.email)
+        .join(User, Resume.user_id == User.id)
+        .order_by(Resume.uploaded_at.desc())
+    )
+    rows = result.all()
+    return [
+        {
+            "id": str(r.Resume.id),
+            "user_id": str(r.Resume.user_id),
+            "owner_name": r.full_name,
+            "owner_email": r.email,
+            "original_filename": r.Resume.original_filename,
+            "file_size": r.Resume.file_size,
+            "mime_type": r.Resume.mime_type,
+            "uploaded_at": r.Resume.uploaded_at.isoformat() if r.Resume.uploaded_at else None,
+        }
+        for r in rows
+    ]

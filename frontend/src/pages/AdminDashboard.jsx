@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
 import VirtualKeyboard from '../components/VirtualKeyboard';
-import { Shield, Users, BarChart3, FileText, AlertTriangle, UserX, UserCheck, Search, ChevronLeft, ChevronRight, Briefcase } from 'lucide-react';
+import { Shield, Users, BarChart3, FileText, AlertTriangle, UserX, UserCheck, Search, ChevronLeft, ChevronRight, Briefcase, Megaphone, Trash2, Download } from 'lucide-react';
 
 export default function AdminDashboard() {
   const { user } = useAuth();
@@ -18,6 +18,11 @@ export default function AdminDashboard() {
   const [actionLoading, setActionLoading] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [auditPage, setAuditPage] = useState(0);
+  const [announcements, setAnnouncements] = useState([]);
+  const [announcementTitle, setAnnouncementTitle] = useState('');
+  const [announcementContent, setAnnouncementContent] = useState('');
+  const [sendingAnnouncement, setSendingAnnouncement] = useState(false);
+  const [allResumes, setAllResumes] = useState([]);
 
   const verify = async () => {
     setVerifyError('');
@@ -66,7 +71,36 @@ export default function AdminDashboard() {
   useEffect(() => {
     if (verified && tab === 'audit') fetchAuditLogs(auditPage);
     if (verified && tab === 'jobs') fetchAdminJobs();
+    if (verified && tab === 'announcements') fetchAnnouncements();
+    if (verified && tab === 'resumes') fetchResumes();
   }, [verified, tab]);
+
+  const fetchResumes = async () => {
+    try {
+      const res = await api.get('/admin/resumes');
+      setAllResumes(res.data || []);
+    } catch (err) {
+      console.error('Admin resumes error:', err);
+    }
+  };
+
+  const downloadResume = async (resumeId, filename) => {
+    const token = prompt('Enter your TOTP code to download this resume:');
+    if (!token) return;
+    try {
+      const res = await api.get(`/resumes/${resumeId}/download?totp_token=${encodeURIComponent(token)}`, { responseType: 'blob' });
+      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename || 'resume';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Failed to download resume');
+    }
+  };
 
   const fetchAdminJobs = async () => {
     try {
@@ -118,6 +152,46 @@ export default function AdminDashboard() {
       alert(err.response?.data?.detail || 'Failed to delete user');
     } finally {
       setActionLoading(null);
+    }
+  };
+
+  const fetchAnnouncements = async () => {
+    try {
+      const res = await api.get('/messages/announcements');
+      setAnnouncements(res.data || []);
+    } catch (err) {
+      console.error('Announcements error:', err);
+    }
+  };
+
+  const sendAnnouncement = async () => {
+    if (!announcementTitle.trim() || !announcementContent.trim()) {
+      alert('Please enter both a title and content for the announcement');
+      return;
+    }
+    setSendingAnnouncement(true);
+    try {
+      await api.post('/messages/announcements', {
+        title: announcementTitle.trim(),
+        content: announcementContent.trim(),
+      });
+      setAnnouncementTitle('');
+      setAnnouncementContent('');
+      fetchAnnouncements();
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Failed to send announcement');
+    } finally {
+      setSendingAnnouncement(false);
+    }
+  };
+
+  const deleteAnnouncement = async (id) => {
+    if (!confirm('Deactivate this announcement?')) return;
+    try {
+      await api.delete(`/messages/announcements/${id}`);
+      fetchAnnouncements();
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Failed to delete announcement');
     }
   };
 
@@ -175,6 +249,8 @@ export default function AdminDashboard() {
           { key: 'overview', label: 'Overview', icon: BarChart3 },
           { key: 'users', label: 'Users', icon: Users },
           { key: 'jobs', label: 'Jobs', icon: Briefcase },
+          { key: 'resumes', label: 'Resumes', icon: Download },
+          { key: 'announcements', label: 'Announcements', icon: Megaphone },
           { key: 'audit', label: 'Audit Logs', icon: FileText },
         ].map(t => (
           <button key={t.key} onClick={() => setTab(t.key)}
@@ -347,6 +423,122 @@ export default function AdminDashboard() {
                 )}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {/* Resumes */}
+      {tab === 'resumes' && (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+          <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
+            <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+              <Download className="h-5 w-5 text-primary-600" />
+              All Resumes ({allResumes.length})
+            </h3>
+          </div>
+          {allResumes.length === 0 ? (
+            <p className="text-gray-500 text-center py-8">No resumes uploaded yet.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50 text-gray-600 text-xs uppercase">
+                  <tr>
+                    <th className="px-4 py-3 text-left">Owner</th>
+                    <th className="px-4 py-3 text-left">Email</th>
+                    <th className="px-4 py-3 text-left">Filename</th>
+                    <th className="px-4 py-3 text-left">Size</th>
+                    <th className="px-4 py-3 text-left">Uploaded</th>
+                    <th className="px-4 py-3 text-left">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {allResumes.map(r => (
+                    <tr key={r.id} className="hover:bg-gray-50">
+                      <td className="px-4 py-3 font-medium text-gray-900">{r.owner_name}</td>
+                      <td className="px-4 py-3 text-gray-500">{r.owner_email}</td>
+                      <td className="px-4 py-3 text-gray-700">{r.original_filename}</td>
+                      <td className="px-4 py-3 text-gray-500">{r.file_size ? `${(r.file_size / 1024).toFixed(1)} KB` : '—'}</td>
+                      <td className="px-4 py-3 text-gray-500">{r.uploaded_at ? new Date(r.uploaded_at).toLocaleDateString() : '—'}</td>
+                      <td className="px-4 py-3">
+                        <button
+                          onClick={() => downloadResume(r.id, r.original_filename)}
+                          className="text-xs px-3 py-1.5 bg-primary-50 text-primary-700 rounded-lg hover:bg-primary-100 flex items-center gap-1">
+                          <Download className="h-3 w-3" /> Download
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Audit Logs */}
+      {/* Announcements */}
+      {tab === 'announcements' && (
+        <div className="space-y-6">
+          {/* Create Announcement */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+              <Megaphone className="h-5 w-5 text-primary-600" />
+              New Announcement
+            </h3>
+            <p className="text-xs text-gray-500 mb-3">
+              Announcements are server-side encrypted (AES/Fernet) at rest and broadcast to all users.
+            </p>
+            <div className="space-y-3">
+              <input
+                type="text" value={announcementTitle}
+                onChange={(e) => setAnnouncementTitle(e.target.value)}
+                placeholder="Announcement title..."
+                maxLength={200}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 outline-none"
+              />
+              <textarea
+                value={announcementContent}
+                onChange={(e) => setAnnouncementContent(e.target.value)}
+                placeholder="Announcement content..."
+                maxLength={10000}
+                rows={4}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 outline-none resize-none"
+              />
+              <button onClick={sendAnnouncement} disabled={sendingAnnouncement || !announcementTitle.trim() || !announcementContent.trim()}
+                className="px-5 py-2 bg-primary-600 text-white text-sm rounded-lg hover:bg-primary-700 transition disabled:opacity-50 font-medium">
+                {sendingAnnouncement ? 'Sending...' : 'Broadcast Announcement'}
+              </button>
+            </div>
+          </div>
+
+          {/* Existing Announcements */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Active Announcements</h3>
+            {announcements.length === 0 ? (
+              <p className="text-center text-gray-400 py-8 text-sm">No announcements yet</p>
+            ) : (
+              <div className="space-y-3">
+                {announcements.map(a => (
+                  <div key={a.id} className="border border-gray-100 rounded-lg p-4 hover:bg-gray-50 transition">
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <h4 className="font-semibold text-gray-900">{a.title}</h4>
+                        <p className="text-sm text-gray-600 mt-1 whitespace-pre-wrap">{a.content}</p>
+                        <div className="flex items-center gap-3 mt-2 text-xs text-gray-400">
+                          <span>By {a.sender_name || 'Admin'}</span>
+                          <span>{new Date(a.created_at).toLocaleString()}</span>
+                          <span className="px-2 py-0.5 bg-green-50 text-green-600 rounded-full text-xs">Server-side encrypted</span>
+                        </div>
+                      </div>
+                      <button onClick={() => deleteAnnouncement(a.id)}
+                        className="p-2 hover:bg-red-50 rounded-lg text-red-400 hover:text-red-600 transition ml-2" title="Deactivate">
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}

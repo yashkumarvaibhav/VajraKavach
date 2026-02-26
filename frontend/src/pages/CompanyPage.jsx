@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
-import { Building2, Plus, Briefcase, MapPin, Globe, Search, ChevronDown, ChevronUp, Users as UsersIcon, Filter, SortAsc, Eye, Mail, FileText, CheckCircle, XCircle, Clock, Trash2, Edit, MessageSquare } from 'lucide-react';
+import { Building2, Plus, Briefcase, MapPin, Globe, Search, ChevronDown, ChevronUp, Users as UsersIcon, Filter, SortAsc, Eye, Mail, FileText, CheckCircle, XCircle, Clock, Trash2, Edit, MessageSquare, Download, Lock } from 'lucide-react';
 
 const CURRENCIES = ['INR', 'USD', 'EUR', 'GBP'];
 const STATUS_OPTIONS = [
@@ -171,6 +171,24 @@ export default function CompanyPage() {
       ));
     } catch (err) {
       alert(err.response?.data?.detail || 'Failed to update status');
+    }
+  };
+
+  const downloadResume = async (resumeId, filename) => {
+    const token = prompt('Enter your TOTP code to download this resume:');
+    if (!token) return;
+    try {
+      const res = await api.get(`/resumes/${resumeId}/download?totp_token=${encodeURIComponent(token)}`, { responseType: 'blob' });
+      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename || 'resume';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Failed to download resume. Check your TOTP code and access permissions.');
     }
   };
 
@@ -481,6 +499,12 @@ export default function CompanyPage() {
                                         <button onClick={() => navigate(`/messages?newConv=${app.user_id}&name=${encodeURIComponent(app.applicant_name || 'Applicant')}`)}
                                           className="text-xs px-2 py-1 bg-teal-50 text-teal-700 rounded-lg hover:bg-teal-100 flex items-center gap-1">
                                           <MessageSquare className="h-3 w-3" /> Message
+                                        </button>
+                                      )}
+                                      {app.resume_id && (
+                                        <button onClick={() => downloadResume(app.resume_id, app.resume_filename || 'resume')}
+                                          className="text-xs px-2 py-1 bg-indigo-50 text-indigo-700 rounded-lg hover:bg-indigo-100 flex items-center gap-1">
+                                          <Download className="h-3 w-3" /> Resume
                                         </button>
                                       )}
                                     </div>

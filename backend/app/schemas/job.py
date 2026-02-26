@@ -133,6 +133,7 @@ class ApplicationResponse(BaseModel):
     applicant_name: Optional[str] = None
     applicant_email: Optional[str] = None
     resume_id: Optional[str] = None
+    resume_filename: Optional[str] = None
     cover_note: Optional[str] = None
     status: str
     recruiter_notes: Optional[str] = None

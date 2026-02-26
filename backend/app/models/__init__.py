@@ -7,6 +7,7 @@ from app.models.job import Job
 from app.models.application import Application
 from app.models.resume import Resume
 from app.models.message import Message, Conversation
+from app.models.announcement import Announcement
 from app.models.audit import AuditLog
 
 __all__ = [

@@ -350,9 +350,11 @@ async def view_user_profile(
         )
         pv = existing_view.scalar_one_or_none()
         if pv:
-            from datetime import datetime
-            pv.viewed_at = datetime.utcnow()
-            pv.visit_count = (pv.visit_count or 1) + 1
+            from datetime import datetime, timedelta
+            # Deduplicate: only count if last view was more than 30 seconds ago
+            if pv.viewed_at is None or (datetime.utcnow() - pv.viewed_at) > timedelta(seconds=30):
+                pv.viewed_at = datetime.utcnow()
+                pv.visit_count = (pv.visit_count or 1) + 1
         else:
             pv = ProfileView(
                 id=uuid.uuid4(),

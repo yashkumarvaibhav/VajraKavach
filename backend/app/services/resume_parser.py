@@ -89,16 +89,26 @@ def extract_skills_from_text(text: str) -> List[str]:
     text_lower = text.lower()
     # Normalize excessive whitespace from PDF extraction artifacts
     text_lower = re.sub(r'\s+', ' ', text_lower)
+    # Also create a version with all spaces stripped for matching garbled PDF text
+    # e.g. "ja v ascript" → "javascript"
+    text_nospace = re.sub(r'\s', '', text_lower)
     found = set()
     for skill in SKILL_KEYWORDS:
         # Check if this skill has a flexible regex override
         if skill in FLEXIBLE_SKILLS:
             if re.search(FLEXIBLE_SKILLS[skill], text_lower):
                 found.add(skill)
-        elif re.search(r'\b' + skill + r'\b', text_lower):
-            # Normalize the display name
-            clean = skill.replace("\\.", ".").replace("\\.js", ".js")
-            found.add(clean)
+        else:
+            # Try normal match first
+            if re.search(r'\b' + skill + r'\b', text_lower):
+                clean = skill.replace("\\.", ".").replace("\\.js", ".js")
+                found.add(clean)
+            else:
+                # Try matching against space-stripped text for garbled PDFs
+                skill_clean = skill.replace("\\.", ".").replace("\\.js", ".js")
+                skill_nospace = skill_clean.replace(" ", "")
+                if len(skill_nospace) >= 3 and skill_nospace in text_nospace:
+                    found.add(skill_clean)
 
     # Special handling for C++ (word boundary after ++ doesn't work)
     if re.search(r'\bc\s*\+\s*\+', text_lower):

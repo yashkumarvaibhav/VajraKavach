@@ -5,7 +5,7 @@ VajraKavach — User & UserProfile Models
 import uuid
 from datetime import datetime
 from sqlalchemy import (
-    Column, String, Boolean, DateTime, Text, Enum as SAEnum, ForeignKey, JSON
+    Column, String, Boolean, DateTime, Text, Enum as SAEnum, ForeignKey, JSON, Integer
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
@@ -88,7 +88,7 @@ class UserProfile(Base):
     })
 
     # Profile viewers
-    view_count = Column(JSON, default=0)
+    view_count = Column(Integer, default=0)
     show_viewers = Column(Boolean, default=True)   # opt-out for profile viewers
 
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -108,6 +108,7 @@ class ProfileView(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     profile_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     viewer_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    visit_count = Column(Integer, default=1)
     viewed_at = Column(DateTime, default=datetime.utcnow)
 
     profile_user = relationship("User", foreign_keys=[profile_user_id])

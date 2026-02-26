@@ -368,13 +368,76 @@ async def admin_dashboard(
     resume_count = (await db.execute(select(func.count(Resume.id)))).scalar()
     log_count = (await db.execute(select(func.count(AuditLog.id)))).scalar()
     suspended_count = (await db.execute(select(func.count(User.id)).where(User.is_suspended == True))).scalar()
+    active_jobs = (await db.execute(select(func.count(Job.id)).where(Job.is_active == True))).scalar()
 
     return {
         "total_users": user_count,
         "total_companies": company_count,
         "total_jobs": job_count,
+        "active_jobs": active_jobs,
         "total_applications": app_count,
         "total_resumes": resume_count,
         "total_audit_logs": log_count,
         "suspended_users": suspended_count,
     }
+
+
+@router.get("/jobs")
+async def admin_list_jobs(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role("admin")),
+):
+    """List all jobs for admin management."""
+    from app.models.job import Job
+    from app.models.company import Company
+
+    result = await db.execute(
+        select(Job, Company.name.label("company_name"))
+        .join(Company, Job.company_id == Company.id)
+        .order_by(Job.created_at.desc())
+    )
+    rows = result.all()
+
+    return [
+        {
+            "id": str(j.id),
+            "title": j.title,
+            "company_name": cn,
+            "location": j.location,
+            "job_type": j.job_type.value if hasattr(j.job_type, 'value') else j.job_type,
+            "is_active": j.is_active,
+            "created_at": j.created_at.isoformat(),
+        }
+        for j, cn in rows
+    ]
+
+
+@router.put("/jobs/{job_id}/delist")
+async def admin_delist_job(
+    job_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role("admin")),
+):
+    """Admin: delist (deactivate) or re-activate a job listing."""
+    from app.models.job import Job
+
+    result = await db.execute(select(Job).where(Job.id == job_id))
+    job = result.scalar_one_or_none()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    job.is_active = not job.is_active
+    await db.flush()
+
+    await create_audit_log(
+        db=db,
+        action="admin.job_toggle_active",
+        user_id=str(current_user.id),
+        resource="job",
+        resource_id=str(job.id),
+        details={"is_active": job.is_active, "title": job.title},
+        ip_address=request.client.host if request.client else None,
+    )
+
+    return {"message": f"Job {'activated' if job.is_active else 'delisted'}", "is_active": job.is_active}

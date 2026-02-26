@@ -522,9 +522,12 @@ export default function ProfilePage() {
                   <p className="text-sm font-semibold text-gray-900 truncate">{v.name || 'Unknown'}</p>
                   {v.headline && <p className="text-xs text-gray-500 truncate">{v.headline}</p>}
                 </div>
-                <span className="text-xs text-gray-400 flex-shrink-0">
-                  {v.viewed_at ? new Date(v.viewed_at).toLocaleDateString() : ''}
-                </span>
+                <div className="flex flex-col items-end flex-shrink-0">
+                  {v.visit_count > 1 && <span className="text-xs font-medium text-primary-600">{v.visit_count} visits</span>}
+                  <span className="text-xs text-gray-400">
+                    {v.viewed_at ? new Date(v.viewed_at).toLocaleDateString() : ''}
+                  </span>
+                </div>
               </div>
             ))}
           </div>

@@ -1,10 +1,12 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
 import { MessageSquare, Send, Plus, ArrowLeft, Users, Trash2, X } from 'lucide-react';
 
 export default function MessagesPage() {
   const { user } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [conversations, setConversations] = useState([]);
   const [activeConv, setActiveConv] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -31,6 +33,28 @@ export default function MessagesPage() {
     fetchConversations();
   }, [fetchConversations]);
 
+  // Handle ?newConv= URL parameter (e.g. from recruiter messaging an applicant)
+  useEffect(() => {
+    const newConvUserId = searchParams.get('newConv');
+    const newConvName = searchParams.get('name');
+    if (newConvUserId) {
+      // Check if conversation already exists
+      const existing = conversations.find(c => c.partner_id === newConvUserId);
+      if (existing) {
+        setActiveConv(existing);
+      } else {
+        setActiveConv({
+          id: `new_${newConvUserId}`,
+          partner_id: newConvUserId,
+          partner_name: newConvName || 'Unknown',
+          is_new: true,
+        });
+        setMessages([]);
+      }
+      setSearchParams({}, { replace: true });
+    }
+  }, [searchParams, conversations]);
+
   const fetchMessages = useCallback(async (convId) => {
     try {
       const res = await api.get(`/messages/conversations/${convId}`);
@@ -42,7 +66,7 @@ export default function MessagesPage() {
   }, []);
 
   useEffect(() => {
-    if (activeConv) {
+    if (activeConv && !activeConv.is_new) {
       fetchMessages(activeConv.id);
       if (pollRef.current) clearInterval(pollRef.current);
       pollRef.current = setInterval(() => fetchMessages(activeConv.id), 5000);
@@ -55,13 +79,29 @@ export default function MessagesPage() {
     if (!newMessage.trim() || !activeConv) return;
     setSendingMsg(true);
     try {
-      await api.post('/messages/', {
-        conversation_id: activeConv.id,
+      const payload = {
         recipient_id: activeConv.partner_id,
         ciphertext: newMessage.trim(),
-      });
+      };
+      // For existing conversations, include conversation_id
+      if (!activeConv.is_new) {
+        payload.conversation_id = activeConv.id;
+      }
+      await api.post('/messages/', payload);
       setNewMessage('');
-      fetchMessages(activeConv.id);
+
+      // If this was a new conversation, refresh conversations to get the real one
+      if (activeConv.is_new) {
+        await fetchConversations();
+        const convRes = await api.get('/messages/conversations');
+        const convList = convRes.data || [];
+        const target = convList.find(c => c.partner_id === activeConv.partner_id);
+        if (target) {
+          setActiveConv(target);
+        }
+      } else {
+        fetchMessages(activeConv.id);
+      }
     } catch (err) {
       alert(err.response?.data?.detail || 'Failed to send message');
     } finally {
@@ -70,28 +110,31 @@ export default function MessagesPage() {
   };
 
   const startNewConversation = async (partnerId) => {
-    try {
-      await api.post('/messages/', {
-        recipient_id: partnerId,
-        ciphertext: 'Hello!',
-      });
+    // Check if a conversation already exists (edge case)
+    const existing = conversations.find(c => c.partner_id === partnerId);
+    if (existing) {
+      setActiveConv(existing);
       setShowNewConv(false);
-      await fetchConversations();
-      const convRes = await api.get('/messages/conversations');
-      const convList = convRes.data || [];
-      const target = convList.find(c => c.partner_id === partnerId);
-      if (target) {
-        setActiveConv(target);
-      }
-    } catch (err) {
-      alert(err.response?.data?.detail || 'Failed to start conversation');
+      return;
     }
+    // Create a virtual/temporary conversation — no auto "Hello!" sent
+    const partnerConn = connections.find(c => c.id === partnerId);
+    setActiveConv({
+      id: `new_${partnerId}`,
+      partner_id: partnerId,
+      partner_name: partnerConn?.name || 'Unknown',
+      is_new: true,
+    });
+    setMessages([]);
+    setShowNewConv(false);
   };
 
-  const deleteMessage = async (msgId) => {
-    if (!confirm('Delete this message?')) return;
+  const [deleteMenuMsg, setDeleteMenuMsg] = useState(null);
+
+  const deleteMessage = async (msgId, forEveryone = false) => {
     try {
-      await api.delete(`/messages/${msgId}`);
+      await api.delete(`/messages/${msgId}?for_everyone=${forEveryone}`);
+      setDeleteMenuMsg(null);
       fetchMessages(activeConv.id);
     } catch (err) {
       alert(err.response?.data?.detail || 'Cannot delete this message');
@@ -99,7 +142,7 @@ export default function MessagesPage() {
   };
 
   const deleteConversation = async (convId) => {
-    if (!confirm('Delete this entire conversation? All messages will be lost.')) return;
+    if (!confirm('Delete this conversation for you? The other person will still see it.')) return;
     try {
       await api.delete(`/messages/conversations/${convId}`);
       setActiveConv(null);
@@ -211,13 +254,15 @@ export default function MessagesPage() {
                   {messages.map(msg => {
                     const isMe = msg.sender_id === user?.id;
                     return (
-                      <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'} group`}>
+                      <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'} group relative`}>
+                        {/* Delete button for own messages (left side) */}
                         {isMe && (
-                          <button onClick={() => deleteMessage(msg.id)}
+                          <button onClick={() => setDeleteMenuMsg(deleteMenuMsg === msg.id ? null : msg.id)}
                             className="self-center mr-2 p-1 opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 transition" title="Delete message">
                             <Trash2 className="h-3.5 w-3.5" />
                           </button>
                         )}
+                        {/* Delete button for received messages (right side after bubble) */}
                         <div className={`max-w-[70%] px-4 py-2.5 rounded-2xl ${
                           isMe
                             ? 'bg-primary-600 text-white rounded-br-md'
@@ -228,6 +273,31 @@ export default function MessagesPage() {
                             {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                           </p>
                         </div>
+                        {!isMe && (
+                          <button onClick={() => setDeleteMenuMsg(deleteMenuMsg === msg.id ? null : msg.id)}
+                            className="self-center ml-2 p-1 opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 transition" title="Delete message">
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                        {/* Delete options menu */}
+                        {deleteMenuMsg === msg.id && (
+                          <div className={`absolute top-full z-10 mt-1 bg-white rounded-lg shadow-lg border border-gray-200 py-1 min-w-[180px] ${isMe ? 'right-0' : 'left-0'}`}>
+                            <button onClick={() => deleteMessage(msg.id, false)}
+                              className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">
+                              Delete for me
+                            </button>
+                            {isMe && (
+                              <button onClick={() => deleteMessage(msg.id, true)}
+                                className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50">
+                                Delete for everyone
+                              </button>
+                            )}
+                            <button onClick={() => setDeleteMenuMsg(null)}
+                              className="w-full text-left px-4 py-2 text-sm text-gray-400 hover:bg-gray-50">
+                              Cancel
+                            </button>
+                          </div>
+                        )}
                       </div>
                     );
                   })}

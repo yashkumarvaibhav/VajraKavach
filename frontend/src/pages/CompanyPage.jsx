@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
-import { Building2, Plus, Briefcase, MapPin, Globe, Search, ChevronDown, ChevronUp, Users as UsersIcon, Filter, SortAsc, Eye, Mail, FileText, CheckCircle, XCircle, Clock } from 'lucide-react';
+import { Building2, Plus, Briefcase, MapPin, Globe, Search, ChevronDown, ChevronUp, Users as UsersIcon, Filter, SortAsc, Eye, Mail, FileText, CheckCircle, XCircle, Clock, Trash2, Edit, MessageSquare } from 'lucide-react';
 
 const CURRENCIES = ['INR', 'USD', 'EUR', 'GBP'];
 const STATUS_OPTIONS = [
@@ -16,6 +16,7 @@ const STATUS_OPTIONS = [
 export default function CompanyPage() {
   const { user } = useAuth();
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const isRecruiter = user?.role === 'recruiter';
   const initialTab = searchParams.get('tab') || (isRecruiter ? 'my' : 'browse');
   const [tab, setTab] = useState(initialTab);
@@ -43,6 +44,8 @@ export default function CompanyPage() {
   const [selectedJob, setSelectedJob] = useState(null);
   const [applicants, setApplicants] = useState([]);
   const [loadingApplicants, setLoadingApplicants] = useState(false);
+  const [editingJob, setEditingJob] = useState(null);
+  const [editJobForm, setEditJobForm] = useState({});
 
   const today = new Date().toISOString().split('T')[0];
 
@@ -168,6 +171,58 @@ export default function CompanyPage() {
       ));
     } catch (err) {
       alert(err.response?.data?.detail || 'Failed to update status');
+    }
+  };
+
+  const startEditJob = (job) => {
+    setEditingJob(job.id);
+    setEditJobForm({
+      title: job.title || '',
+      description: job.description || '',
+      location: job.location || '',
+      salary_min: job.salary_min || '',
+      salary_max: job.salary_max || '',
+      salary_currency: job.salary_currency || 'INR',
+      job_type: job.job_type || 'full_time',
+      location_type: job.location_type || 'onsite',
+      application_deadline: job.application_deadline || '',
+      is_active: job.is_active,
+    });
+  };
+
+  const saveEditJob = async (e) => {
+    e.preventDefault();
+    setError('');
+    if (editJobForm.salary_min && editJobForm.salary_max && Number(editJobForm.salary_max) < Number(editJobForm.salary_min)) {
+      setError('Maximum salary cannot be less than minimum salary');
+      return;
+    }
+    try {
+      await api.put(`/jobs/${editingJob}`, {
+        ...editJobForm,
+        salary_min: editJobForm.salary_min || null,
+        salary_max: editJobForm.salary_max || null,
+        application_deadline: editJobForm.application_deadline || null,
+      });
+      setEditingJob(null);
+      setEditJobForm({});
+      fetchMyJobs();
+    } catch (err) {
+      const detail = err.response?.data?.detail;
+      if (Array.isArray(detail)) setError(detail.map(d => d.msg || d).join('; '));
+      else setError(detail || 'Failed to update job');
+    }
+  };
+
+  const deleteJob = async (jobId) => {
+    if (!confirm('Delete this job listing? This cannot be undone.')) return;
+    try {
+      await api.delete(`/jobs/${jobId}`);
+      setSelectedJob(null);
+      setApplicants([]);
+      fetchMyJobs();
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Failed to delete job');
     }
   };
 
@@ -367,6 +422,16 @@ export default function CompanyPage() {
                       <span className="capitalize">{job.job_type?.replace('_', ' ')}</span>
                       {job.is_active ? <span className="text-green-600">Active</span> : <span className="text-red-500">Closed</span>}
                     </div>
+                    <div className="flex items-center gap-2 mt-3">
+                      <button onClick={(e) => { e.stopPropagation(); startEditJob(job); }}
+                        className="flex items-center gap-1 px-3 py-1.5 text-xs border border-gray-300 rounded-lg hover:bg-gray-50 transition">
+                        <Edit className="h-3 w-3" /> Edit
+                      </button>
+                      <button onClick={(e) => { e.stopPropagation(); deleteJob(job.id); }}
+                        className="flex items-center gap-1 px-3 py-1.5 text-xs border border-red-200 text-red-600 rounded-lg hover:bg-red-50 transition">
+                        <Trash2 className="h-3 w-3" /> Delete
+                      </button>
+                    </div>
                   </div>
 
                   {/* Applicants Panel */}
@@ -405,6 +470,20 @@ export default function CompanyPage() {
                                     <p className="text-xs text-gray-400 mt-2">
                                       Applied {new Date(app.created_at).toLocaleDateString()}
                                     </p>
+                                    <div className="flex items-center gap-2 mt-2">
+                                      {app.user_id && (
+                                        <button onClick={() => navigate(`/profile/${app.user_id}`)}
+                                          className="text-xs px-2 py-1 bg-primary-50 text-primary-700 rounded-lg hover:bg-primary-100 flex items-center gap-1">
+                                          <Eye className="h-3 w-3" /> View Profile
+                                        </button>
+                                      )}
+                                      {app.user_id && (
+                                        <button onClick={() => navigate(`/messages?newConv=${app.user_id}&name=${encodeURIComponent(app.applicant_name || 'Applicant')}`)}
+                                          className="text-xs px-2 py-1 bg-teal-50 text-teal-700 rounded-lg hover:bg-teal-100 flex items-center gap-1">
+                                          <MessageSquare className="h-3 w-3" /> Message
+                                        </button>
+                                      )}
+                                    </div>
                                   </div>
 
                                   {/* Status Update Controls */}
@@ -481,12 +560,12 @@ export default function CompanyPage() {
                 <div>
                   <label className="text-sm font-medium text-gray-700 mb-1 block">Min Salary</label>
                   <input type="number" value={jobForm.salary_min} onChange={(e) => setJobForm(f => ({ ...f, salary_min: e.target.value }))}
-                    className={inputClass} placeholder="50000" min="0" />
+                    className={inputClass} placeholder="50000" min="0" max="999999999" />
                 </div>
                 <div>
                   <label className="text-sm font-medium text-gray-700 mb-1 block">Max Salary</label>
                   <input type="number" value={jobForm.salary_max} onChange={(e) => setJobForm(f => ({ ...f, salary_max: e.target.value }))}
-                    className={inputClass} placeholder="100000" min="0" />
+                    className={inputClass} placeholder="100000" min="0" max="999999999" />
                 </div>
               </div>
               <div className="grid grid-cols-3 gap-3">
@@ -521,6 +600,91 @@ export default function CompanyPage() {
                   className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
                 <button type="submit"
                   className="px-4 py-2 text-sm bg-primary-600 text-white rounded-lg hover:bg-primary-700">Post Job</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Job Modal */}
+      {editingJob && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-lg w-full p-6 max-h-[90vh] overflow-y-auto">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Edit Job</h3>
+            {error && <div className="bg-red-50 text-red-700 p-3 rounded-lg mb-4 text-sm">{error}</div>}
+            <form onSubmit={saveEditJob} className="space-y-4">
+              <div>
+                <label className="text-sm font-medium text-gray-700 mb-1 block">Job Title <span className="text-red-500">*</span></label>
+                <input type="text" value={editJobForm.title} onChange={(e) => setEditJobForm(f => ({ ...f, title: e.target.value }))}
+                  required maxLength={255} className={inputClass} />
+              </div>
+              <div>
+                <label className="text-sm font-medium text-gray-700 mb-1 block">Description <span className="text-red-500">*</span></label>
+                <textarea value={editJobForm.description} onChange={(e) => setEditJobForm(f => ({ ...f, description: e.target.value }))}
+                  required maxLength={10000} className={inputClass + " h-24 resize-none"} />
+              </div>
+              <div>
+                <label className="text-sm font-medium text-gray-700 mb-1 block">Location</label>
+                <input type="text" value={editJobForm.location} onChange={(e) => setEditJobForm(f => ({ ...f, location: e.target.value }))}
+                  maxLength={255} className={inputClass} />
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="text-sm font-medium text-gray-700 mb-1 block">Currency</label>
+                  <select value={editJobForm.salary_currency} onChange={(e) => setEditJobForm(f => ({ ...f, salary_currency: e.target.value }))}
+                    className={inputClass}>
+                    {CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-gray-700 mb-1 block">Min Salary</label>
+                  <input type="number" value={editJobForm.salary_min} onChange={(e) => setEditJobForm(f => ({ ...f, salary_min: e.target.value }))}
+                    className={inputClass} min="0" max="999999999" />
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-gray-700 mb-1 block">Max Salary</label>
+                  <input type="number" value={editJobForm.salary_max} onChange={(e) => setEditJobForm(f => ({ ...f, salary_max: e.target.value }))}
+                    className={inputClass} min="0" max="999999999" />
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="text-sm font-medium text-gray-700 mb-1 block">Job Type</label>
+                  <select value={editJobForm.job_type} onChange={(e) => setEditJobForm(f => ({ ...f, job_type: e.target.value }))}
+                    className={inputClass}>
+                    <option value="full_time">Full Time</option>
+                    <option value="part_time">Part Time</option>
+                    <option value="contract">Contract</option>
+                    <option value="internship">Internship</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-gray-700 mb-1 block">Location Type</label>
+                  <select value={editJobForm.location_type} onChange={(e) => setEditJobForm(f => ({ ...f, location_type: e.target.value }))}
+                    className={inputClass}>
+                    <option value="onsite">On-site</option>
+                    <option value="remote">Remote</option>
+                    <option value="hybrid">Hybrid</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-gray-700 mb-1 block">Deadline</label>
+                  <input type="date" value={editJobForm.application_deadline || ''}
+                    onChange={(e) => setEditJobForm(f => ({ ...f, application_deadline: e.target.value }))}
+                    className={inputClass} />
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <label className="text-sm font-medium text-gray-700">Active</label>
+                <input type="checkbox" checked={editJobForm.is_active}
+                  onChange={(e) => setEditJobForm(f => ({ ...f, is_active: e.target.checked }))}
+                  className="h-4 w-4 text-primary-600 rounded border-gray-300" />
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button type="button" onClick={() => { setEditingJob(null); setError(''); }}
+                  className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
+                <button type="submit"
+                  className="px-4 py-2 text-sm bg-primary-600 text-white rounded-lg hover:bg-primary-700">Save Changes</button>
               </div>
             </form>
           </div>

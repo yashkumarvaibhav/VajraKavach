@@ -115,7 +115,7 @@ export default function ForgotPasswordPage() {
             <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
             <input
               type="email" value={email} onChange={(e) => setEmail(e.target.value)}
-              required className={inputClass} placeholder="you@example.com"
+              required maxLength={255} className={inputClass} placeholder="you@example.com"
             />
           </div>
 
@@ -140,7 +140,7 @@ export default function ForgotPasswordPage() {
             <label className="block text-sm font-medium text-gray-700 mb-1">Confirm New Password</label>
             <input
               type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)}
-              required className={inputClass} placeholder="Re-enter new password"
+              required maxLength={16} className={inputClass} placeholder="Re-enter new password"
             />
             {confirmPassword && newPassword !== confirmPassword && (
               <p className="text-xs text-red-500 mt-1">Passwords do not match</p>

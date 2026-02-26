@@ -346,6 +346,30 @@ export default function ConnectionsPage() {
     }
   };
 
+  const cancelRequestFromSearch = async (userId) => {
+    try {
+      // Find the connection in sent list for this user
+      const conn = sent.find(s => s.addressee_id === userId);
+      if (conn) {
+        await api.delete(`/users/connections/${conn.id}`);
+      } else {
+        // Fetch sent list first to find the conn id
+        const sentRes = await api.get('/users/connections/sent');
+        const sentConn = (sentRes.data || []).find(s => s.addressee_id === userId);
+        if (sentConn) {
+          await api.delete(`/users/connections/${sentConn.id}`);
+        }
+      }
+      // Optimistic update: reset connection_status to null in search results
+      setSearchResults(prev =>
+        prev.map(u => u.id === userId ? { ...u, connection_status: null } : u)
+      );
+      fetchAll();
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Failed to cancel request');
+    }
+  };
+
   const respondRequest = async (connId, accept) => {
     try {
       if (accept) {
@@ -553,9 +577,15 @@ export default function ConnectionsPage() {
                           <UserCheck className="h-3.5 w-3.5" /> Connected
                         </span>
                       ) : u.connection_status === 'pending' ? (
-                        <span className="px-3 py-1.5 bg-yellow-50 text-yellow-700 text-sm rounded-lg font-medium flex items-center gap-1">
-                          <Clock className="h-3.5 w-3.5" /> Pending
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className="px-3 py-1.5 bg-yellow-50 text-yellow-700 text-sm rounded-lg font-medium flex items-center gap-1">
+                            <Clock className="h-3.5 w-3.5" /> Pending
+                          </span>
+                          <button onClick={() => cancelRequestFromSearch(u.id)}
+                            className="px-3 py-1.5 bg-red-100 text-red-700 text-sm rounded-lg hover:bg-red-200 transition">
+                            Cancel
+                          </button>
+                        </div>
                       ) : (
                         <button onClick={() => sendRequest(u.id)}
                           className="px-3 py-1.5 bg-primary-600 text-white text-sm rounded-lg hover:bg-primary-700 transition flex items-center gap-1">

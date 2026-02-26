@@ -220,6 +220,7 @@ export default function CompanyPage() {
       location_type: job.location_type || 'onsite',
       application_deadline: job.application_deadline || '',
       is_active: job.is_active,
+      required_skills: Array.isArray(job.required_skills) ? job.required_skills.join(', ') : (job.required_skills || ''),
     });
   };
 
@@ -236,6 +237,7 @@ export default function CompanyPage() {
         salary_min: editJobForm.salary_min || null,
         salary_max: editJobForm.salary_max || null,
         application_deadline: editJobForm.application_deadline || null,
+        required_skills: editJobForm.required_skills ? editJobForm.required_skills.split(',').map(s => s.trim()).filter(Boolean) : [],
       });
       setEditingJob(null);
       setEditJobForm({});
@@ -743,6 +745,12 @@ export default function CompanyPage() {
                     onChange={(e) => setEditJobForm(f => ({ ...f, application_deadline: e.target.value }))}
                     className={inputClass} />
                 </div>
+              </div>
+              <div>
+                <label className="text-sm font-medium text-gray-700 mb-1 block">Required Skills <span className="text-xs text-gray-400">(comma-separated)</span></label>
+                <input type="text" value={editJobForm.required_skills || ''}
+                  onChange={(e) => setEditJobForm(f => ({ ...f, required_skills: e.target.value }))}
+                  placeholder="e.g. Python, React, SQL" className={inputClass} />
               </div>
               <div className="flex items-center gap-2">
                 <label className="text-sm font-medium text-gray-700">Active</label>

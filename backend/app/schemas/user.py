@@ -32,6 +32,7 @@ class UserProfileUpdate(BaseModel):
     headline: Optional[str] = Field(None, max_length=255)
     location: Optional[str] = Field(None, max_length=255)
     bio: Optional[str] = Field(None, max_length=5000)
+    website: Optional[str] = Field(None, max_length=512)
     education: Optional[List[Dict[str, Any]]] = None
     experience: Optional[List[Dict[str, Any]]] = None
     skills: Optional[List[str]] = None
@@ -53,6 +54,7 @@ class UserProfileResponse(BaseModel):
     headline: Optional[str] = None
     location: Optional[str] = None
     bio: Optional[str] = None
+    website: Optional[str] = None
     education: Optional[List[Dict[str, Any]]] = None
     experience: Optional[List[Dict[str, Any]]] = None
     skills: Optional[List[str]] = None

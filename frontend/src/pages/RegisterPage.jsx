@@ -181,7 +181,7 @@ export default function RegisterPage() {
             <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
             <input
               type="text" name="full_name" value={form.full_name} onChange={handleChange}
-              required className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none"
+              required maxLength={255} className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none"
               placeholder="John Doe"
             />
           </div>
@@ -190,7 +190,7 @@ export default function RegisterPage() {
             <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
             <input
               type="email" name="email" value={form.email} onChange={handleChange}
-              required className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none"
+              required maxLength={255} className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none"
               placeholder="you@example.com"
             />
           </div>
@@ -220,7 +220,7 @@ export default function RegisterPage() {
               </select>
               <input
                 type="tel" name="phone" value={form.phone} onChange={handleChange}
-                className="flex-1 px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none"
+                maxLength={20} className="flex-1 px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none"
                 placeholder="9876543210"
               />
             </div>

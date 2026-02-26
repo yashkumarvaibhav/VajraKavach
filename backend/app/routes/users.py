@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_, and_, func
 
 from app.database import get_db
-from app.models.user import User, UserProfile, UserRole
+from app.models.user import User, UserProfile, UserRole, ProfileView
 from app.models.connection import Connection, ConnectionStatus
 from app.schemas.user import (
     UserResponse, UserProfileUpdate, UserProfileResponse,
@@ -243,6 +243,7 @@ async def get_my_profile(
         headline=profile.headline,
         location=profile.location,
         bio=profile.bio,
+        website=profile.website,
         education=profile.education,
         experience=profile.experience,
         skills=profile.skills,
@@ -292,6 +293,7 @@ async def update_my_profile(
         headline=profile.headline,
         location=profile.location,
         bio=profile.bio,
+        website=profile.website,
         education=profile.education,
         experience=profile.experience,
         skills=profile.skills,
@@ -320,10 +322,29 @@ async def view_user_profile(
     user_result = await db.execute(select(User).where(User.id == user_id))
     target_user = user_result.scalar_one_or_none()
 
-    # Increment view count
+    # Increment view count and record viewer
     if str(current_user.id) != user_id:
         current_count = profile.view_count if isinstance(profile.view_count, int) else 0
         profile.view_count = current_count + 1
+
+        # Upsert profile view record (update timestamp if already viewed)
+        existing_view = await db.execute(
+            select(ProfileView).where(
+                ProfileView.profile_user_id == uuid.UUID(user_id),
+                ProfileView.viewer_id == current_user.id,
+            )
+        )
+        pv = existing_view.scalar_one_or_none()
+        if pv:
+            from datetime import datetime
+            pv.viewed_at = datetime.utcnow()
+        else:
+            pv = ProfileView(
+                id=uuid.uuid4(),
+                profile_user_id=uuid.UUID(user_id),
+                viewer_id=current_user.id,
+            )
+            db.add(pv)
 
     # Check connection status for privacy filtering
     is_connected = False
@@ -351,6 +372,7 @@ async def view_user_profile(
         "headline": profile.headline,
         "location": profile.location,
         "bio": profile.bio,
+        "website": profile.website,
         "education": profile.education,
         "experience": profile.experience,
         "skills": profile.skills,
@@ -370,6 +392,55 @@ async def view_user_profile(
                 response_data[field] = None
 
     return UserProfileResponse(**response_data)
+
+
+# ── Profile Viewers ──────────────────────────────────────────────────
+
+@router.get("/me/profile/viewers")
+async def get_profile_viewers(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Get list of users who viewed current user's profile (most recent 20)."""
+    # Check if user has show_viewers enabled
+    prof_result = await db.execute(
+        select(UserProfile).where(UserProfile.user_id == current_user.id)
+    )
+    profile = prof_result.scalar_one_or_none()
+    if not profile or not profile.show_viewers:
+        return {"viewers": [], "total": 0}
+
+    result = await db.execute(
+        select(ProfileView)
+        .where(ProfileView.profile_user_id == current_user.id)
+        .order_by(ProfileView.viewed_at.desc())
+        .limit(20)
+    )
+    views = result.scalars().all()
+
+    viewers = []
+    for v in views:
+        user_result = await db.execute(select(User).where(User.id == v.viewer_id))
+        viewer_user = user_result.scalar_one_or_none()
+        vp_result = await db.execute(select(UserProfile).where(UserProfile.user_id == v.viewer_id))
+        viewer_profile = vp_result.scalar_one_or_none()
+        if viewer_user:
+            viewers.append({
+                "id": str(viewer_user.id),
+                "name": viewer_user.full_name,
+                "headline": viewer_profile.headline if viewer_profile else None,
+                "picture": viewer_profile.profile_picture_url if viewer_profile else None,
+                "viewed_at": v.viewed_at.isoformat() if v.viewed_at else None,
+            })
+
+    # Total unique viewers count
+    total_result = await db.execute(
+        select(func.count(ProfileView.id))
+        .where(ProfileView.profile_user_id == current_user.id)
+    )
+    total = total_result.scalar() or 0
+
+    return {"viewers": viewers, "total": total}
 
 
 # ── Connections ──────────────────────────────────────────────────────

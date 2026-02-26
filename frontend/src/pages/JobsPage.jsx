@@ -20,8 +20,9 @@ export default function JobsPage() {
   const fetchJobs = async (q = '') => {
     setLoading(true);
     try {
-      const url = q ? `/jobs/?search=${encodeURIComponent(q)}` : '/jobs/';
-      const res = await api.get(url);
+      const params = new URLSearchParams();
+      if (q) params.append('keyword', q);
+      const res = await api.get(`/jobs/search?${params.toString()}`);
       setJobs(res.data || []);
     } catch (err) {
       console.error('Fetch jobs error:', err);
@@ -71,6 +72,7 @@ export default function JobsPage() {
           onChange={(e) => setSearchQuery(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
           placeholder="Search by title, location, or company..."
+          maxLength={100}
           className="flex-1 px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none"
         />
         <button onClick={handleSearch}
@@ -133,6 +135,7 @@ export default function JobsPage() {
                         value={coverLetter}
                         onChange={(e) => setCoverLetter(e.target.value)}
                         placeholder="Write a cover letter (optional)..."
+                        maxLength={2000}
                         className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm h-20 resize-none focus:ring-2 focus:ring-primary-500 outline-none"
                       />
                       {error && <p className="text-sm text-red-600">{error}</p>}

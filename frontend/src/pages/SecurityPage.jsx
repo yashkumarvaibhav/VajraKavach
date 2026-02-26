@@ -131,6 +131,7 @@ export default function SecurityPage() {
                 value={currentPassword}
                 onChange={(e) => setCurrentPassword(e.target.value)}
                 required
+                maxLength={128}
                 className={inputClass}
                 placeholder="Enter current password"
               />
@@ -167,6 +168,7 @@ export default function SecurityPage() {
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
               required
+              maxLength={128}
               className={inputClass}
               placeholder="Re-enter new password"
             />

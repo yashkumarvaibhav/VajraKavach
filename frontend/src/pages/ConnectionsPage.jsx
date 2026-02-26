@@ -1,104 +1,296 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import { Users, Search, UserPlus, UserCheck, Clock, Send, Network, X, Trash2 } from 'lucide-react';
 
-/** Simple force-directed SVG graph for connection visualization */
-function NetworkGraph({ nodes, edges, currentUserId, userName }) {
+/** Enhanced force-directed SVG graph for connection visualization */
+function NetworkGraph({ nodes, edges, currentUserId, userName, onNodeClick }) {
   const svgRef = useRef(null);
   const [positions, setPositions] = useState([]);
   const [hovered, setHovered] = useState(null);
+  const [tooltip, setTooltip] = useState(null);
 
   useEffect(() => {
     if (!nodes || nodes.length === 0) return;
 
-    const width = 700, height = 450;
+    const width = 700, height = 500;
     const cx = width / 2, cy = height / 2;
 
-    // Place center user at middle, connections in a circle around
+    // Build node list with center user first
     const allNodes = [
-      { id: currentUserId, name: userName || 'You', isCenter: true },
-      ...nodes.filter(n => n.id !== currentUserId),
+      { id: currentUserId, name: userName || 'You', isCenter: true, role: 'self' },
+      ...nodes.filter(n => n.id !== currentUserId).map(n => ({ ...n, isCenter: false })),
     ];
 
-    const angleStep = (2 * Math.PI) / Math.max(allNodes.length - 1, 1);
-    const radius = Math.min(width, height) * 0.35;
+    // Count connections per node for sizing
+    const edgeCount = {};
+    (edges || []).forEach(e => {
+      edgeCount[e.from] = (edgeCount[e.from] || 0) + 1;
+      edgeCount[e.to] = (edgeCount[e.to] || 0) + 1;
+    });
 
-    const pos = allNodes.map((node, i) => {
+    // Identify mutual edges (edges between non-center nodes)
+    const mutualEdgeSet = new Set();
+    (edges || []).forEach(e => {
+      if (e.from !== currentUserId && e.to !== currentUserId) {
+        mutualEdgeSet.add(`${e.from}-${e.to}`);
+        mutualEdgeSet.add(`${e.to}-${e.from}`);
+      }
+    });
+
+    // Count mutual connections per node
+    allNodes.forEach(n => {
+      if (!n.isCenter) {
+        let mc = 0;
+        allNodes.forEach(other => {
+          if (other.id !== n.id && !other.isCenter) {
+            if (mutualEdgeSet.has(`${n.id}-${other.id}`)) mc++;
+          }
+        });
+        n.mutual_count = mc;
+      }
+    });
+
+    // Force-directed layout: initialize with circle, then simulate
+    const angleStep = (2 * Math.PI) / Math.max(allNodes.length - 1, 1);
+    const radius = Math.min(width, height) * 0.32;
+
+    let pos = allNodes.map((node, i) => {
       if (node.isCenter || i === 0) {
-        return { ...node, x: cx, y: cy };
+        return { ...node, x: cx, y: cy, vx: 0, vy: 0 };
       }
       const angle = angleStep * (i - 1) - Math.PI / 2;
       return {
         ...node,
-        x: cx + radius * Math.cos(angle),
-        y: cy + radius * Math.sin(angle),
+        x: cx + radius * Math.cos(angle) + (Math.random() - 0.5) * 20,
+        y: cy + radius * Math.sin(angle) + (Math.random() - 0.5) * 20,
+        vx: 0, vy: 0,
       };
     });
 
+    // Build edge lookup for force simulation
+    const edgeList = (edges || []).length > 0 ? edges : allNodes.slice(1).map(n => ({ from: currentUserId, to: n.id }));
+    const nodeIdx = {};
+    pos.forEach((n, i) => { nodeIdx[n.id] = i; });
+
+    // Simple force simulation (50 iterations)
+    const repulsion = 8000;
+    const attraction = 0.005;
+    const centerGravity = 0.01;
+    const damping = 0.85;
+
+    for (let iter = 0; iter < 60; iter++) {
+      // Repulsion between all nodes
+      for (let i = 0; i < pos.length; i++) {
+        for (let j = i + 1; j < pos.length; j++) {
+          const dx = pos[i].x - pos[j].x;
+          const dy = pos[i].y - pos[j].y;
+          const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+          const force = repulsion / (dist * dist);
+          const fx = (dx / dist) * force;
+          const fy = (dy / dist) * force;
+          if (!pos[i].isCenter) { pos[i].vx += fx; pos[i].vy += fy; }
+          if (!pos[j].isCenter) { pos[j].vx -= fx; pos[j].vy -= fy; }
+        }
+      }
+
+      // Attraction along edges
+      edgeList.forEach(e => {
+        const si = nodeIdx[e.from];
+        const ti = nodeIdx[e.to];
+        if (si === undefined || ti === undefined) return;
+        const dx = pos[ti].x - pos[si].x;
+        const dy = pos[ti].y - pos[si].y;
+        const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+        const isMutual = e.from !== currentUserId && e.to !== currentUserId;
+        const str = isMutual ? attraction * 1.5 : attraction;
+        const fx = dx * str;
+        const fy = dy * str;
+        if (!pos[si].isCenter) { pos[si].vx += fx; pos[si].vy += fy; }
+        if (!pos[ti].isCenter) { pos[ti].vx -= fx; pos[ti].vy -= fy; }
+      });
+
+      // Center gravity
+      pos.forEach(n => {
+        if (!n.isCenter) {
+          n.vx += (cx - n.x) * centerGravity;
+          n.vy += (cy - n.y) * centerGravity;
+        }
+      });
+
+      // Apply velocities with damping and boundary clamping
+      pos.forEach(n => {
+        if (!n.isCenter) {
+          n.vx *= damping;
+          n.vy *= damping;
+          n.x += n.vx;
+          n.y += n.vy;
+          n.x = Math.max(40, Math.min(width - 40, n.x));
+          n.y = Math.max(40, Math.min(height - 40, n.y));
+        }
+      });
+    }
+
     setPositions(pos);
-  }, [nodes, currentUserId, userName]);
+  }, [nodes, edges, currentUserId, userName]);
 
   if (positions.length === 0) return null;
 
   const posMap = {};
   positions.forEach(p => { posMap[p.id] = p; });
 
-  const edgeLines = (edges || []).map((edge, i) => {
-    const from = posMap[edge.from] || posMap[edge.source];
-    const to = posMap[edge.to] || posMap[edge.target];
+  // Classify edges: direct (to center) vs mutual (between connections)
+  const processedEdges = (edges || []).map((edge, i) => {
+    const from = posMap[edge.from];
+    const to = posMap[edge.to];
     if (!from || !to) return null;
-    return (
-      <line key={i} x1={from.x} y1={from.y} x2={to.x} y2={to.y}
-        stroke="#cbd5e1" strokeWidth="1.5" opacity="0.7" />
-    );
+    const isDirect = edge.from === currentUserId || edge.to === currentUserId;
+    return { from, to, isDirect, key: i };
   }).filter(Boolean);
 
-  // If no edges provided, draw lines from center to all
-  const fallbackEdges = (!edges || edges.length === 0) ? positions.slice(1).map((p, i) => (
-    <line key={`fb-${i}`} x1={positions[0].x} y1={positions[0].y} x2={p.x} y2={p.y}
-      stroke="#cbd5e1" strokeWidth="1.5" opacity="0.6" />
-  )) : [];
+  // Fallback: draw lines from center to all if no edges
+  const fallbackEdges = processedEdges.length === 0 ? positions.slice(1).map((p, i) => ({
+    from: positions[0], to: p, isDirect: true, key: `fb-${i}`
+  })) : [];
+
+  const allEdges = processedEdges.length > 0 ? processedEdges : fallbackEdges;
+
+  // Stats
+  const totalConnections = nodes.filter(n => n.id !== currentUserId).length;
+  const mutualEdgeCount = allEdges.filter(e => !e.isDirect).length;
 
   return (
     <div>
-      <h3 className="text-lg font-semibold text-gray-900 mb-4">Your Network ({nodes.length} connections)</h3>
-      <svg ref={svgRef} viewBox="0 0 700 450" className="w-full border border-gray-100 rounded-lg bg-gradient-to-br from-gray-50 to-white">
-        {edgeLines.length > 0 ? edgeLines : fallbackEdges}
-        {positions.map((node) => (
-          <g key={node.id}
-             onMouseEnter={() => setHovered(node.id)}
-             onMouseLeave={() => setHovered(null)}
-             style={{ cursor: 'pointer' }}>
-            <circle cx={node.x} cy={node.y}
-              r={node.isCenter ? 28 : 22}
-              fill={node.isCenter ? '#4f46e5' : hovered === node.id ? '#6366f1' : '#818cf8'}
-              stroke="white" strokeWidth="3"
-              className="transition-all duration-200"
-            />
-            <text x={node.x} y={node.y + 1} textAnchor="middle" dominantBaseline="central"
-              fill="white" fontSize={node.isCenter ? 14 : 11} fontWeight="bold">
-              {(node.name || '?')[0].toUpperCase()}
-            </text>
-            <text x={node.x} y={node.y + (node.isCenter ? 40 : 34)} textAnchor="middle"
-              fill="#374151" fontSize="11" fontWeight="500">
-              {node.isCenter ? 'You' : (node.name || 'Unknown')}
-            </text>
-            {node.mutual_count > 0 && !node.isCenter && (
-              <text x={node.x} y={node.y + 46} textAnchor="middle"
-                fill="#9ca3af" fontSize="9">
-                {node.mutual_count} mutual
-              </text>
-            )}
-          </g>
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-lg font-semibold text-gray-900">Your Network</h3>
+        <div className="flex items-center gap-4 text-sm text-gray-500">
+          <span className="flex items-center gap-1.5">
+            <span className="w-3 h-3 rounded-full bg-indigo-600 inline-block"></span>
+            You
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="w-3 h-3 rounded-full bg-indigo-400 inline-block"></span>
+            {totalConnections} connection{totalConnections !== 1 ? 's' : ''}
+          </span>
+          {mutualEdgeCount > 0 && (
+            <span className="flex items-center gap-1.5">
+              <span className="w-6 h-0.5 bg-emerald-400 inline-block rounded"></span>
+              {mutualEdgeCount} mutual link{mutualEdgeCount !== 1 ? 's' : ''}
+            </span>
+          )}
+        </div>
+      </div>
+      <svg ref={svgRef} viewBox="0 0 700 500" className="w-full border border-gray-100 rounded-lg bg-gradient-to-br from-slate-50 via-white to-indigo-50"
+        style={{ minHeight: '400px' }}>
+        <defs>
+          <filter id="glow">
+            <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
+            <feMerge><feMergeNode in="coloredBlur"/><feMergeNode in="SourceGraphic"/></feMerge>
+          </filter>
+          <radialGradient id="centerGrad" cx="40%" cy="40%">
+            <stop offset="0%" stopColor="#818cf8"/>
+            <stop offset="100%" stopColor="#4338ca"/>
+          </radialGradient>
+          <radialGradient id="nodeGrad" cx="40%" cy="40%">
+            <stop offset="0%" stopColor="#a5b4fc"/>
+            <stop offset="100%" stopColor="#6366f1"/>
+          </radialGradient>
+          <radialGradient id="nodeHoverGrad" cx="40%" cy="40%">
+            <stop offset="0%" stopColor="#c7d2fe"/>
+            <stop offset="100%" stopColor="#4f46e5"/>
+          </radialGradient>
+        </defs>
+
+        {/* Draw edges */}
+        {allEdges.map((edge) => (
+          <line key={edge.key}
+            x1={edge.from.x} y1={edge.from.y} x2={edge.to.x} y2={edge.to.y}
+            stroke={edge.isDirect ? '#c7d2fe' : '#6ee7b7'}
+            strokeWidth={edge.isDirect ? 1.5 : 2}
+            strokeDasharray={edge.isDirect ? 'none' : '6 3'}
+            opacity={0.7}
+          />
         ))}
+
+        {/* Draw nodes */}
+        {positions.map((node) => {
+          const nodeConns = (edges || []).filter(e => e.from === node.id || e.to === node.id).length;
+          const baseR = node.isCenter ? 30 : Math.min(26, 18 + nodeConns * 2);
+          const isHovered = hovered === node.id;
+
+          return (
+            <g key={node.id}
+               onMouseEnter={() => { setHovered(node.id); setTooltip(node); }}
+               onMouseLeave={() => { setHovered(null); setTooltip(null); }}
+               onClick={() => !node.isCenter && onNodeClick && onNodeClick(node.id)}
+               style={{ cursor: node.isCenter ? 'default' : 'pointer' }}>
+              {/* Hover glow ring */}
+              {isHovered && !node.isCenter && (
+                <circle cx={node.x} cy={node.y} r={baseR + 6}
+                  fill="none" stroke="#a5b4fc" strokeWidth="2" opacity="0.5" filter="url(#glow)" />
+              )}
+              {/* Node circle */}
+              <circle cx={node.x} cy={node.y} r={baseR}
+                fill={node.isCenter ? 'url(#centerGrad)' : isHovered ? 'url(#nodeHoverGrad)' : 'url(#nodeGrad)'}
+                stroke="white" strokeWidth={node.isCenter ? 4 : 3}
+                filter={node.isCenter ? 'url(#glow)' : 'none'}
+              />
+              {/* Initial letter */}
+              <text x={node.x} y={node.y + 1} textAnchor="middle" dominantBaseline="central"
+                fill="white" fontSize={node.isCenter ? 16 : 13} fontWeight="bold"
+                style={{ pointerEvents: 'none' }}>
+                {(node.name || '?')[0].toUpperCase()}
+              </text>
+              {/* Name label */}
+              <text x={node.x} y={node.y + baseR + 14} textAnchor="middle"
+                fill="#374151" fontSize="11" fontWeight="600"
+                style={{ pointerEvents: 'none' }}>
+                {node.isCenter ? 'You' : (node.name || 'Unknown').split(' ')[0]}
+              </text>
+              {/* Mutual count badge */}
+              {node.mutual_count > 0 && !node.isCenter && (
+                <>
+                  <circle cx={node.x + baseR - 4} cy={node.y - baseR + 4} r="8"
+                    fill="#10b981" stroke="white" strokeWidth="1.5" />
+                  <text x={node.x + baseR - 4} y={node.y - baseR + 5} textAnchor="middle"
+                    dominantBaseline="central" fill="white" fontSize="8" fontWeight="bold"
+                    style={{ pointerEvents: 'none' }}>
+                    {node.mutual_count}
+                  </text>
+                </>
+              )}
+            </g>
+          );
+        })}
       </svg>
+
+      {/* Tooltip */}
+      {tooltip && !tooltip.isCenter && (
+        <div className="mt-2 p-3 bg-white rounded-lg border border-gray-200 shadow-sm flex items-center gap-3">
+          <div className="w-10 h-10 rounded-full bg-indigo-100 flex items-center justify-center">
+            <span className="text-indigo-700 font-bold">{(tooltip.name || '?')[0].toUpperCase()}</span>
+          </div>
+          <div>
+            <p className="font-semibold text-gray-900">{tooltip.name || 'Unknown'}</p>
+            <p className="text-xs text-gray-500">
+              {tooltip.role === 'recruiter' ? 'Recruiter' : 'Job Seeker'}
+              {tooltip.mutual_count > 0 && ` · ${tooltip.mutual_count} mutual connection${tooltip.mutual_count > 1 ? 's' : ''}`}
+            </p>
+          </div>
+          <button onClick={() => onNodeClick && onNodeClick(tooltip.id)}
+            className="ml-auto text-xs px-3 py-1 bg-indigo-50 text-indigo-700 rounded-lg hover:bg-indigo-100 transition">
+            View Profile
+          </button>
+        </div>
+      )}
     </div>
   );
 }
 
 export default function ConnectionsPage() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [tab, setTab] = useState('connections');
   const [connections, setConnections] = useState([]);
   const [pending, setPending] = useState([]);
@@ -200,9 +392,10 @@ export default function ConnectionsPage() {
     };
   };
 
-  const PersonCard = ({ name, headline, picture, actions }) => (
+  const PersonCard = ({ userId, name, headline, picture, actions }) => (
     <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 flex items-center space-x-4">
-      <div className="w-12 h-12 rounded-full bg-primary-100 flex items-center justify-center overflow-hidden flex-shrink-0">
+      <div className="w-12 h-12 rounded-full bg-primary-100 flex items-center justify-center overflow-hidden flex-shrink-0 cursor-pointer"
+        onClick={() => userId && navigate(`/profile/${userId}`)}>
         {picture ? (
           <img src={picture} alt="" className="w-12 h-12 rounded-full object-cover" />
         ) : (
@@ -210,7 +403,10 @@ export default function ConnectionsPage() {
         )}
       </div>
       <div className="flex-1 min-w-0">
-        <p className="font-semibold text-gray-900 truncate">{name || 'Unknown User'}</p>
+        <p className="font-semibold text-gray-900 truncate cursor-pointer hover:text-primary-600"
+          onClick={() => userId && navigate(`/profile/${userId}`)}>
+          {name || 'Unknown User'}
+        </p>
         {headline && <p className="text-sm text-gray-500 truncate">{headline}</p>}
       </div>
       {actions && <div className="flex items-center gap-2 flex-shrink-0">{actions}</div>}
@@ -260,7 +456,7 @@ export default function ConnectionsPage() {
                 </div>
               ) : connections.map(conn => {
                 const p = getPartnerInfo(conn);
-                return <PersonCard key={conn.id} name={p.name} headline={p.headline} picture={p.picture}
+                return <PersonCard key={conn.id} userId={p.id} name={p.name} headline={p.headline} picture={p.picture}
                   actions={
                     <button onClick={() => removeConnection(conn.id)}
                       className="px-3 py-1.5 bg-red-100 text-red-700 text-sm rounded-lg hover:bg-red-200 transition">
@@ -282,6 +478,7 @@ export default function ConnectionsPage() {
                 </div>
               ) : pending.map(conn => (
                 <PersonCard key={conn.id}
+                  userId={conn.requester_id}
                   name={conn.requester_name}
                   headline={conn.requester_headline}
                   picture={conn.requester_picture}
@@ -308,11 +505,18 @@ export default function ConnectionsPage() {
                 </div>
               ) : sent.map(conn => (
                 <PersonCard key={conn.id}
+                  userId={conn.addressee_id}
                   name={conn.addressee_name}
                   headline={conn.addressee_headline}
                   picture={conn.addressee_picture}
                   actions={
-                    <span className="px-3 py-1.5 bg-yellow-50 text-yellow-700 text-sm rounded-lg font-medium">Pending</span>
+                    <>
+                      <span className="px-3 py-1.5 bg-yellow-50 text-yellow-700 text-sm rounded-lg font-medium">Pending</span>
+                      <button onClick={() => removeConnection(conn.id)}
+                        className="px-3 py-1.5 bg-red-100 text-red-700 text-sm rounded-lg hover:bg-red-200 transition">
+                        Cancel
+                      </button>
+                    </>
                   }
                 />
               ))}
@@ -328,6 +532,7 @@ export default function ConnectionsPage() {
                   onChange={(e) => setSearchQuery(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
                   placeholder="Search by name or email..."
+                  maxLength={100}
                   className="flex-1 px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none"
                 />
                 <button onClick={handleSearch} disabled={searching}
@@ -338,6 +543,7 @@ export default function ConnectionsPage() {
               <div className="space-y-3">
                 {searchResults.map(u => (
                   <PersonCard key={u.id}
+                    userId={u.id}
                     name={u.full_name}
                     headline={u.headline}
                     picture={u.profile_picture_url}
@@ -377,7 +583,7 @@ export default function ConnectionsPage() {
                   <p>No connections in your network yet</p>
                 </div>
               ) : (
-                <NetworkGraph nodes={graph.nodes} edges={graph.edges} currentUserId={user?.id} userName={user?.full_name} />
+                <NetworkGraph nodes={graph.nodes} edges={graph.edges} currentUserId={user?.id} userName={user?.full_name} onNodeClick={(id) => navigate(`/profile/${id}`)} />
               )}
             </div>
           )}

@@ -12,17 +12,21 @@ export default function DashboardPage() {
     const fetchStats = async () => {
       try {
         const endpoints = {
-          connections: '/users/connections',
           conversations: '/messages/conversations',
         };
-        const [connRes, convRes] = await Promise.all([
-          api.get(endpoints.connections),
-          api.get(endpoints.conversations),
-        ]);
-        const s = {
-          connections: (connRes.data || []).filter(c => c.status === 'accepted').length,
-          conversations: (convRes.data || []).length,
-        };
+        const s = {};
+
+        if (user?.role !== 'admin') {
+          const [connRes, convRes] = await Promise.all([
+            api.get('/users/connections'),
+            api.get(endpoints.conversations),
+          ]);
+          s.connections = (connRes.data || []).filter(c => c.status === 'accepted').length;
+          s.conversations = (convRes.data || []).length;
+        } else {
+          s.connections = 0;
+          s.conversations = 0;
+        }
 
         if (user?.role === 'user') {
           const appRes = await api.get('/applications/my');
@@ -56,7 +60,7 @@ export default function DashboardPage() {
 
   const recruiterCards = [
     { icon: Building2, label: 'My Companies', desc: `${stats?.companies || 0} companies`, to: '/companies', color: 'blue' },
-    { icon: Briefcase, label: 'My Job Postings', desc: `${stats?.myJobs || 0} active listings`, to: '/companies', color: 'indigo' },
+    { icon: Briefcase, label: 'My Job Postings', desc: `${stats?.myJobs || 0} active listings`, to: '/companies?tab=jobs', color: 'indigo' },
     { icon: Users, label: 'Connections', desc: `${stats?.connections || 0} active connections`, to: '/connections', color: 'green' },
     { icon: MessageSquare, label: 'Messages', desc: `${stats?.conversations || 0} conversations`, to: '/messages', color: 'teal' },
     { icon: Shield, label: 'Security', desc: 'Change password & TOTP', to: '/security', color: 'red' },
@@ -65,8 +69,7 @@ export default function DashboardPage() {
   const adminCards = [
     { icon: BarChart3, label: 'Admin Panel', desc: 'Manage platform users', to: '/admin', color: 'blue' },
     { icon: Briefcase, label: 'All Jobs', desc: 'Monitor job listings', to: '/jobs', color: 'indigo' },
-    { icon: Users, label: 'Connections', desc: `${stats?.connections || 0} connections`, to: '/connections', color: 'green' },
-    { icon: MessageSquare, label: 'Messages', desc: `${stats?.conversations || 0} conversations`, to: '/messages', color: 'teal' },
+    { icon: Building2, label: 'Companies', desc: 'Browse companies', to: '/companies', color: 'green' },
     { icon: Shield, label: 'Security', desc: 'Change password & TOTP', to: '/security', color: 'red' },
   ];
 

@@ -69,6 +69,7 @@ class UserProfile(Base):
     headline = Column(String(255), nullable=True)
     location = Column(String(255), nullable=True)
     bio = Column(Text, nullable=True)
+    website = Column(String(512), nullable=True)
     education = Column(JSON, nullable=True)       # list of dicts
     experience = Column(JSON, nullable=True)       # list of dicts
     skills = Column(JSON, nullable=True)           # list of strings
@@ -98,3 +99,19 @@ class UserProfile(Base):
 
     def __repr__(self):
         return f"<UserProfile user_id={self.user_id}>"
+
+
+class ProfileView(Base):
+    """Tracks who viewed a user's profile (most recent view per viewer)."""
+    __tablename__ = "profile_views"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    profile_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    viewer_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    viewed_at = Column(DateTime, default=datetime.utcnow)
+
+    profile_user = relationship("User", foreign_keys=[profile_user_id])
+    viewer = relationship("User", foreign_keys=[viewer_id])
+
+    def __repr__(self):
+        return f"<ProfileView viewer={self.viewer_id} -> profile={self.profile_user_id}>"

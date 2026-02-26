@@ -150,15 +150,17 @@ export default function VirtualKeyboard({
       )}
 
       {/* Toggle keyboard type */}
-      <div className="flex items-center justify-center mt-3">
-        <button
-          type="button"
-          onClick={() => setUsePhysical(!usePhysical)}
-          className="text-xs text-gray-500 hover:text-primary-600 underline"
-        >
-          {usePhysical ? 'Use virtual keyboard' : 'Use physical keyboard'}
-        </button>
-      </div>
+      {!hideToggle && (
+        <div className="flex items-center justify-center mt-3">
+          <button
+            type="button"
+            onClick={() => setUsePhysical(!usePhysical)}
+            className="text-xs text-gray-500 hover:text-primary-600 underline"
+          >
+            {usePhysical ? 'Use virtual keyboard' : 'Use physical keyboard'}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
-import { User, Save, Plus, Trash2, GraduationCap, Briefcase, Globe, Lock, Users, Upload } from 'lucide-react';
+import { User, Save, Plus, Trash2, GraduationCap, Briefcase, Globe, Lock, Users, Upload, Eye, EyeOff } from 'lucide-react';
 
 const PRIVACY_OPTIONS = [
   { value: 'public', label: 'Public', icon: Globe },
@@ -45,12 +46,19 @@ export default function ProfilePage() {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [viewCount, setViewCount] = useState(0);
+  const [fullName, setFullName] = useState('');
+  const [email, setEmail] = useState('');
+  const [viewers, setViewers] = useState([]);
+  const [showViewers, setShowViewers] = useState(true);
+  const navigate = useNavigate();
 
   useEffect(() => {
     const fetchProfile = async () => {
       try {
         const res = await api.get('/users/me/profile');
         const data = res.data || {};
+        setFullName(data.full_name || user?.full_name || '');
+        setEmail(data.email || user?.email || '');
         setProfile({
           headline: data.headline || '',
           bio: data.bio || '',
@@ -65,11 +73,20 @@ export default function ProfilePage() {
           setPrivacy(prev => ({ ...prev, ...data.privacy_settings }));
         }
         setViewCount(data.view_count || 0);
+        setShowViewers(data.show_viewers !== false);
       } catch (err) {
         console.error('Profile fetch error:', err);
       }
     };
-    if (user?.id) fetchProfile();
+    const fetchViewers = async () => {
+      try {
+        const res = await api.get('/users/me/profile/viewers');
+        setViewers(res.data?.viewers || []);
+      } catch (err) {
+        console.error('Viewers fetch error:', err);
+      }
+    };
+    if (user?.id) { fetchProfile(); fetchViewers(); }
   }, [user]);
 
   const showMsg = (text, isError = false) => {
@@ -84,13 +101,22 @@ export default function ProfilePage() {
       const skills = profile.skills
         ? profile.skills.split(',').map(s => s.trim()).filter(Boolean)
         : [];
+      // Auto-prepend https:// to website if needed
+      let website = profile.website;
+      if (website && !website.match(/^https?:\/\//i)) {
+        website = 'https://' + website;
+      }
+      // Save name via account endpoint
+      await api.put('/users/me', { full_name: fullName });
+      // Save profile fields
       await api.put('/users/me/profile', {
         headline: profile.headline,
         bio: profile.bio,
         location: profile.location,
-        website: profile.website,
+        website,
         skills,
         privacy_settings: privacy,
+        show_viewers: showViewers,
       });
       showMsg('Profile saved!');
     } catch (err) {
@@ -203,6 +229,21 @@ export default function ProfilePage() {
         </div>
 
         <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="text-sm font-medium text-gray-700 mb-1 block">Full Name</label>
+              <input type="text" value={fullName}
+                onChange={(e) => setFullName(e.target.value.slice(0, 255))}
+                className={inputClass} placeholder="Your full name" maxLength={255} />
+            </div>
+            <div>
+              <label className="text-sm font-medium text-gray-700 mb-1 block">Email (Username)</label>
+              <input type="email" value={email} readOnly disabled
+                className={inputClass + " bg-gray-50 text-gray-500 cursor-not-allowed"} />
+              <p className="text-xs text-gray-400 mt-1">Email cannot be changed</p>
+            </div>
+          </div>
+
           <div>
             <div className="flex items-center justify-between mb-1">
               <label className="text-sm font-medium text-gray-700">Headline</label>
@@ -237,13 +278,13 @@ export default function ProfilePage() {
               </div>
               <input type="text" value={profile.location}
                 onChange={(e) => setProfile(p => ({ ...p, location: e.target.value }))}
-                className={inputClass} placeholder="City, Country" />
+                className={inputClass} placeholder="City, Country" maxLength={255} />
             </div>
             <div>
               <label className="text-sm font-medium text-gray-700 mb-1 block">Website</label>
-              <input type="url" value={profile.website}
+              <input type="text" value={profile.website}
                 onChange={(e) => setProfile(p => ({ ...p, website: e.target.value }))}
-                className={inputClass} placeholder="https://..." />
+                className={inputClass} placeholder="example.com or https://example.com" maxLength={512} />
             </div>
           </div>
 
@@ -254,7 +295,7 @@ export default function ProfilePage() {
             </div>
             <input type="text" value={profile.skills}
               onChange={(e) => setProfile(p => ({ ...p, skills: e.target.value }))}
-              className={inputClass} placeholder="Python, React, Machine Learning" />
+              className={inputClass} placeholder="Python, React, Machine Learning" maxLength={1000} />
           </div>
 
           <div>
@@ -322,17 +363,17 @@ export default function ProfilePage() {
                   <div className="col-span-2">
                     <label className="text-xs text-gray-500">Institution</label>
                     <input type="text" value={edu.institution || ''} onChange={(e) => updateEducation(idx, 'institution', e.target.value)}
-                      className={inputClass} placeholder="University Name" />
+                      className={inputClass} placeholder="University Name" maxLength={255} />
                   </div>
                   <div>
                     <label className="text-xs text-gray-500">Degree</label>
                     <input type="text" value={edu.degree || ''} onChange={(e) => updateEducation(idx, 'degree', e.target.value)}
-                      className={inputClass} placeholder="B.Tech" />
+                      className={inputClass} placeholder="B.Tech" maxLength={255} />
                   </div>
                   <div>
                     <label className="text-xs text-gray-500">Field of Study</label>
                     <input type="text" value={edu.field_of_study || ''} onChange={(e) => updateEducation(idx, 'field_of_study', e.target.value)}
-                      className={inputClass} placeholder="Computer Science" />
+                      className={inputClass} placeholder="Computer Science" maxLength={255} />
                   </div>
                   <div>
                     <label className="text-xs text-gray-500">Start Year</label>
@@ -404,22 +445,22 @@ export default function ProfilePage() {
                   <div>
                     <label className="text-xs text-gray-500">Company</label>
                     <input type="text" value={exp.company || ''} onChange={(e) => updateExperience(idx, 'company', e.target.value)}
-                      className={inputClass} placeholder="Company Name" />
+                      className={inputClass} placeholder="Company Name" maxLength={255} />
                   </div>
                   <div>
                     <label className="text-xs text-gray-500">Title</label>
                     <input type="text" value={exp.title || ''} onChange={(e) => updateExperience(idx, 'title', e.target.value)}
-                      className={inputClass} placeholder="Software Engineer" />
+                      className={inputClass} placeholder="Software Engineer" maxLength={255} />
                   </div>
                   <div>
                     <label className="text-xs text-gray-500">Location</label>
                     <input type="text" value={exp.location || ''} onChange={(e) => updateExperience(idx, 'location', e.target.value)}
-                      className={inputClass} placeholder="City, Country" />
+                      className={inputClass} placeholder="City, Country" maxLength={255} />
                   </div>
                   <div className="col-span-2">
                     <label className="text-xs text-gray-500">Description</label>
                     <textarea value={exp.description || ''} onChange={(e) => updateExperience(idx, 'description', e.target.value)}
-                      className={inputClass + " h-16 resize-none"} placeholder="What did you do?" />
+                      className={inputClass + " h-16 resize-none"} placeholder="What did you do?" maxLength={5000} />
                   </div>
                   <div>
                     <label className="text-xs text-gray-500">Start Date</label>
@@ -435,6 +476,55 @@ export default function ProfilePage() {
                     )}
                   </div>
                 </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Profile Viewers */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 mb-6">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <Eye className="h-5 w-5 text-primary-600" />
+            <h2 className="text-lg font-semibold text-gray-900">Profile Viewers</h2>
+            <span className="text-sm text-gray-400">({viewCount} total views)</span>
+          </div>
+          <button onClick={() => setShowViewers(!showViewers)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg transition ${
+              showViewers ? 'bg-green-50 text-green-700 hover:bg-green-100' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+            }`}>
+            {showViewers ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
+            {showViewers ? 'Visible' : 'Hidden'}
+          </button>
+        </div>
+
+        {!showViewers ? (
+          <p className="text-sm text-gray-400 text-center py-4">
+            Profile viewer tracking is disabled. Toggle above and save to enable.
+          </p>
+        ) : viewers.length === 0 ? (
+          <p className="text-sm text-gray-400 text-center py-4">No profile viewers yet.</p>
+        ) : (
+          <div className="space-y-2">
+            {viewers.map((v) => (
+              <div key={v.id}
+                onClick={() => navigate(`/profile/${v.id}`)}
+                className="flex items-center gap-3 p-3 rounded-lg hover:bg-gray-50 cursor-pointer transition">
+                <div className="w-10 h-10 rounded-full bg-primary-100 flex items-center justify-center overflow-hidden flex-shrink-0">
+                  {v.picture ? (
+                    <img src={v.picture} alt="" className="w-10 h-10 rounded-full object-cover" />
+                  ) : (
+                    <span className="text-primary-600 font-bold">{(v.name || '?')[0].toUpperCase()}</span>
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-gray-900 truncate">{v.name || 'Unknown'}</p>
+                  {v.headline && <p className="text-xs text-gray-500 truncate">{v.headline}</p>}
+                </div>
+                <span className="text-xs text-gray-400 flex-shrink-0">
+                  {v.viewed_at ? new Date(v.viewed_at).toLocaleDateString() : ''}
+                </span>
               </div>
             ))}
           </div>

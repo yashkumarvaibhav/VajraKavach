@@ -214,3 +214,59 @@ async def get_user_public_key(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User has no public key")
 
     return {"user_id": str(user.id), "public_key": user.public_key}
+
+
+@router.delete("/{message_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_message(
+    message_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Delete a specific message (only the sender can delete)."""
+    result = await db.execute(
+        select(Message).where(
+            Message.id == message_id,
+            Message.sender_id == current_user.id,
+        )
+    )
+    msg = result.scalar_one_or_none()
+    if not msg:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Message not found or not your message")
+    await db.delete(msg)
+
+
+@router.delete("/conversations/{conversation_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_conversation(
+    conversation_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Delete a conversation and all its messages (only if you are a participant)."""
+    # Verify participation
+    result = await db.execute(
+        select(Message).where(
+            Message.conversation_id == conversation_id,
+            or_(
+                Message.sender_id == current_user.id,
+                Message.recipient_id == current_user.id,
+            ),
+        ).limit(1)
+    )
+    if not result.scalar_one_or_none():
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not part of this conversation")
+
+    # Delete all messages in the conversation
+    msg_result = await db.execute(
+        select(Message).where(Message.conversation_id == conversation_id)
+    )
+    msgs = msg_result.scalars().all()
+    for m in msgs:
+        await db.delete(m)
+
+    # Delete the conversation itself
+    conv_result = await db.execute(
+        select(Conversation).where(Conversation.id == conversation_id)
+    )
+    conv = conv_result.scalar_one_or_none()
+    if conv:
+        await db.delete(conv)

@@ -3,6 +3,7 @@ import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
 import VirtualKeyboard from '../components/VirtualKeyboard';
 import { Shield, Users, BarChart3, FileText, AlertTriangle, UserX, UserCheck, Search, ChevronLeft, ChevronRight, Briefcase, Megaphone, Trash2, Download } from 'lucide-react';
+import { toISTDate, toISTDateTime } from '../utils/time';
 
 export default function AdminDashboard() {
   const { user } = useAuth();
@@ -402,7 +403,7 @@ export default function AdminDashboard() {
                         {job.is_active ? 'Active' : 'Delisted'}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-sm text-gray-500">{new Date(job.created_at).toLocaleDateString()}</td>
+                    <td className="px-4 py-3 text-sm text-gray-500">{toISTDate(job.created_at)}</td>
                     <td className="px-4 py-3 text-right">
                       <button
                         onClick={() => toggleJobActive(job.id)}
@@ -458,7 +459,7 @@ export default function AdminDashboard() {
                       <td className="px-4 py-3 text-gray-500">{r.owner_email}</td>
                       <td className="px-4 py-3 text-gray-700">{r.original_filename}</td>
                       <td className="px-4 py-3 text-gray-500">{r.file_size ? `${(r.file_size / 1024).toFixed(1)} KB` : '—'}</td>
-                      <td className="px-4 py-3 text-gray-500">{r.uploaded_at ? new Date(r.uploaded_at).toLocaleDateString() : '—'}</td>
+                      <td className="px-4 py-3 text-gray-500">{r.uploaded_at ? toISTDate(r.uploaded_at) : '—'}</td>
                       <td className="px-4 py-3">
                         <button
                           onClick={() => downloadResume(r.id, r.original_filename)}
@@ -526,7 +527,7 @@ export default function AdminDashboard() {
                         <p className="text-sm text-gray-600 mt-1 whitespace-pre-wrap">{a.content}</p>
                         <div className="flex items-center gap-3 mt-2 text-xs text-gray-400">
                           <span>By {a.sender_name || 'Admin'}</span>
-                          <span>{new Date(a.created_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}</span>
+                          <span>{toISTDateTime(a.created_at)}</span>
                           <span className="px-2 py-0.5 bg-green-50 text-green-600 rounded-full text-xs">Server-side encrypted</span>
                         </div>
                       </div>
@@ -559,7 +560,7 @@ export default function AdminDashboard() {
               <tbody className="divide-y divide-gray-50">
                 {auditLogs.map(log => (
                   <tr key={log.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3 text-sm text-gray-600">{new Date(log.created_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}</td>
+                    <td className="px-4 py-3 text-sm text-gray-600">{toISTDateTime(log.created_at)}</td>
                     <td className="px-4 py-3 text-sm font-medium text-gray-900">{log.action}</td>
                     <td className="px-4 py-3 text-sm text-gray-600">{log.user_id || 'System'}</td>
                     <td className="px-4 py-3">

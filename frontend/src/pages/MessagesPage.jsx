@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
 import { MessageSquare, Send, Plus, ArrowLeft, Users, Trash2, X, UserPlus } from 'lucide-react';
+import { toIST } from '../utils/time';
 
 export default function MessagesPage() {
   const { user } = useAuth();
@@ -348,7 +349,7 @@ export default function MessagesPage() {
                             )}
                             <p className="text-sm text-gray-400 italic">This message was deleted</p>
                             <p className="text-xs mt-1 text-gray-300">
-                              {new Date(msg.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })}
+                              {toIST(msg.created_at)}
                             </p>
                           </div>
                         ) : (
@@ -362,7 +363,7 @@ export default function MessagesPage() {
                             )}
                             <p className="text-sm whitespace-pre-wrap">{msg.ciphertext || msg.content}</p>
                             <p className={`text-xs mt-1 ${isMe ? 'text-primary-200' : 'text-gray-400'}`}>
-                              {new Date(msg.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })}
+                              {toIST(msg.created_at)}
                             </p>
                           </div>
                         )}

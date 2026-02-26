@@ -3,6 +3,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import { User, Save, Plus, Trash2, GraduationCap, Briefcase, Globe, Lock, Users, Upload, Eye, EyeOff } from 'lucide-react';
+import { toISTDate } from '../utils/time';
 
 const PRIVACY_OPTIONS = [
   { value: 'public', label: 'Public', icon: Globe },
@@ -540,7 +541,7 @@ export default function ProfilePage() {
                 <div className="flex flex-col items-end flex-shrink-0">
                   {v.visit_count > 1 && <span className="text-xs font-medium text-primary-600">{v.visit_count} visits</span>}
                   <span className="text-xs text-gray-400">
-                    {v.viewed_at ? new Date(v.viewed_at).toLocaleDateString() : ''}
+                    {v.viewed_at ? toISTDate(v.viewed_at) : ''}
                   </span>
                 </div>
               </div>

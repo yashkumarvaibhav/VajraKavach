@@ -3,6 +3,7 @@ import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
 import { Building2, Plus, Briefcase, MapPin, Globe, Search, ChevronDown, ChevronUp, Users as UsersIcon, Filter, SortAsc, Eye, Mail, FileText, CheckCircle, XCircle, Clock, Trash2, Edit, MessageSquare, Download, Lock } from 'lucide-react';
+import { toISTDate } from '../utils/time';
 
 const CURRENCIES = ['INR', 'USD', 'EUR', 'GBP'];
 const STATUS_OPTIONS = [
@@ -486,7 +487,7 @@ export default function CompanyPage() {
                                       </div>
                                     )}
                                     <p className="text-xs text-gray-400 mt-2">
-                                      Applied {new Date(app.created_at).toLocaleDateString()}
+                                      Applied {toISTDate(app.created_at)}
                                     </p>
                                     <div className="flex items-center gap-2 mt-2">
                                       {app.user_id && (

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
 import { ClipboardList, Building2, Calendar, FileText, XCircle } from 'lucide-react';
+import { toISTDate } from '../utils/time';
 
 const STATUS_COLORS = {
   pending: 'bg-yellow-50 text-yellow-700',
@@ -86,7 +87,7 @@ export default function ApplicationsPage() {
               <div className="flex items-center gap-4 mt-3 text-xs text-gray-400">
                 <span className="flex items-center gap-1">
                   <Calendar className="h-3 w-3" />
-                  Applied {new Date(app.applied_at || app.created_at).toLocaleDateString()}
+                  Applied {toISTDate(app.applied_at || app.created_at)}
                 </span>
               </div>
 

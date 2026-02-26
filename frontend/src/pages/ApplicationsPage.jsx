@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
-import { ClipboardList, Building2, Calendar, FileText } from 'lucide-react';
+import { ClipboardList, Building2, Calendar, FileText, XCircle } from 'lucide-react';
 
 const STATUS_COLORS = {
   pending: 'bg-yellow-50 text-yellow-700',
@@ -15,20 +15,35 @@ export default function ApplicationsPage() {
   const { user } = useAuth();
   const [applications, setApplications] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [withdrawing, setWithdrawing] = useState(null);
+
+  const fetchApplications = async () => {
+    try {
+      const res = await api.get('/applications/my');
+      setApplications(res.data || []);
+    } catch (err) {
+      console.error('Fetch applications error:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const fetchApplications = async () => {
-      try {
-        const res = await api.get('/applications/my');
-        setApplications(res.data || []);
-      } catch (err) {
-        console.error('Fetch applications error:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
     fetchApplications();
   }, []);
+
+  const withdrawApplication = async (appId) => {
+    if (!confirm('Withdraw this application? This cannot be undone.')) return;
+    setWithdrawing(appId);
+    try {
+      await api.delete(`/applications/${appId}`);
+      setApplications(prev => prev.filter(a => a.id !== appId));
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Failed to withdraw application');
+    } finally {
+      setWithdrawing(null);
+    }
+  };
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-8">
@@ -74,6 +89,18 @@ export default function ApplicationsPage() {
                   Applied {new Date(app.applied_at || app.created_at).toLocaleDateString()}
                 </span>
               </div>
+
+              {(app.status === 'applied' || app.status === 'pending') && (
+                <div className="mt-3 pt-3 border-t border-gray-100">
+                  <button
+                    onClick={() => withdrawApplication(app.id)}
+                    disabled={withdrawing === app.id}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-red-600 bg-red-50 rounded-lg hover:bg-red-100 transition disabled:opacity-50">
+                    <XCircle className="h-3.5 w-3.5" />
+                    {withdrawing === app.id ? 'Withdrawing...' : 'Withdraw Application'}
+                  </button>
+                </div>
+              )}
             </div>
           ))}
         </div>

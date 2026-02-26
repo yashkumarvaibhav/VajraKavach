@@ -322,8 +322,8 @@ async def view_user_profile(
     user_result = await db.execute(select(User).where(User.id == user_id))
     target_user = user_result.scalar_one_or_none()
 
-    # Increment view count and record viewer
-    if str(current_user.id) != user_id:
+    # Increment view count and record viewer (only if show_viewers is enabled)
+    if str(current_user.id) != user_id and profile.show_viewers:
         profile.view_count = (profile.view_count or 0) + 1
 
         # Upsert profile view record (update timestamp and visit count if already viewed)

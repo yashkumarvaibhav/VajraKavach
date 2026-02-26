@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
-import { MessageSquare, Send, Plus, ArrowLeft, Users, Trash2, X } from 'lucide-react';
+import { MessageSquare, Send, Plus, ArrowLeft, Users, Trash2, X, UserPlus } from 'lucide-react';
 
 export default function MessagesPage() {
   const { user } = useAuth();
@@ -14,7 +14,11 @@ export default function MessagesPage() {
   const [loading, setLoading] = useState(true);
   const [sendingMsg, setSendingMsg] = useState(false);
   const [showNewConv, setShowNewConv] = useState(false);
+  const [showNewGroup, setShowNewGroup] = useState(false);
+  const [groupName, setGroupName] = useState('');
+  const [selectedMembers, setSelectedMembers] = useState([]);
   const [connections, setConnections] = useState([]);
+  const [groupMembers, setGroupMembers] = useState([]);
   const messagesEndRef = useRef(null);
   const pollRef = useRef(null);
 
@@ -80,17 +84,19 @@ export default function MessagesPage() {
     setSendingMsg(true);
     try {
       const payload = {
-        recipient_id: activeConv.partner_id,
         ciphertext: newMessage.trim(),
       };
-      // For existing conversations, include conversation_id
-      if (!activeConv.is_new) {
+      if (activeConv.is_group) {
         payload.conversation_id = activeConv.id;
+      } else {
+        payload.recipient_id = activeConv.partner_id;
+        if (!activeConv.is_new) {
+          payload.conversation_id = activeConv.id;
+        }
       }
       await api.post('/messages/', payload);
       setNewMessage('');
 
-      // If this was a new conversation, refresh conversations to get the real one
       if (activeConv.is_new) {
         await fetchConversations();
         const convRes = await api.get('/messages/conversations');
@@ -157,7 +163,6 @@ export default function MessagesPage() {
     try {
       const res = await api.get('/users/connections');
       const accepted = (res.data || []).filter(c => c.status === 'accepted');
-      // Map to get partner info
       const partners = accepted.map(conn => {
         const isRequester = conn.requester_id === user?.id;
         return {
@@ -165,18 +170,71 @@ export default function MessagesPage() {
           name: isRequester ? conn.addressee_name : conn.requester_name,
         };
       });
-      // Exclude users who already have conversations
-      const existingPartners = new Set(conversations.map(c => c.partner_id));
-      setConnections(partners.filter(p => !existingPartners.has(p.id)));
+      // For DM: exclude those with existing conversations
+      // For group: we use allConnections
+      setConnections(partners);
     } catch (err) {
       console.error('Failed to load connections:', err);
     }
   };
 
+  // Filter connections for DM (exclude those with existing conversations)
+  const dmConnections = connections.filter(p => !conversations.some(c => c.partner_id === p.id));
+
   const handleNewConv = () => {
     setShowNewConv(true);
     loadConnections();
   };
+
+  const handleNewGroup = () => {
+    setShowNewConv(false);
+    setShowNewGroup(true);
+    setGroupName('');
+    setSelectedMembers([]);
+    loadConnections();
+  };
+
+  const toggleMember = (id) => {
+    setSelectedMembers(prev =>
+      prev.includes(id) ? prev.filter(m => m !== id) : [...prev, id]
+    );
+  };
+
+  const createGroup = async () => {
+    if (!groupName.trim() || selectedMembers.length === 0) {
+      alert('Please enter a group name and select at least one member');
+      return;
+    }
+    try {
+      const res = await api.post('/messages/groups', {
+        name: groupName.trim(),
+        member_ids: selectedMembers,
+      });
+      setShowNewGroup(false);
+      await fetchConversations();
+      setActiveConv(res.data);
+      setMessages([]);
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Failed to create group');
+    }
+  };
+
+  const fetchGroupMembers = async (groupId) => {
+    try {
+      const res = await api.get(`/messages/groups/${groupId}/members`);
+      setGroupMembers(res.data || []);
+    } catch (err) {
+      console.error('Failed to fetch group members:', err);
+    }
+  };
+
+  useEffect(() => {
+    if (activeConv?.is_group && activeConv.id) {
+      fetchGroupMembers(activeConv.id);
+    } else {
+      setGroupMembers([]);
+    }
+  }, [activeConv]);
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-8">
@@ -210,14 +268,22 @@ export default function MessagesPage() {
                     className={`w-full px-4 py-3 text-left hover:bg-gray-50 transition flex items-center space-x-3 ${
                       activeConv?.id === conv.id ? 'bg-primary-50 border-r-2 border-primary-600' : ''
                     }`}>
-                    <div className="w-10 h-10 rounded-full bg-primary-100 flex items-center justify-center flex-shrink-0">
-                      <span className="text-primary-600 font-bold">
-                        {(conv.partner_name || '?')[0].toUpperCase()}
-                      </span>
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${
+                      conv.is_group ? 'bg-blue-100' : 'bg-primary-100'
+                    }`}>
+                      {conv.is_group ? (
+                        <Users className="h-5 w-5 text-blue-600" />
+                      ) : (
+                        <span className="text-primary-600 font-bold">
+                          {(conv.partner_name || conv.name || '?')[0].toUpperCase()}
+                        </span>
+                      )}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="font-medium text-gray-900 truncate">{conv.partner_name || 'Unknown'}</p>
-                      <p className="text-xs text-gray-400">Click to view messages</p>
+                      <p className="font-medium text-gray-900 truncate">{conv.is_group ? conv.name : (conv.partner_name || 'Unknown')}</p>
+                      <p className="text-xs text-gray-400">
+                        {conv.is_group ? `${conv.member_count || 0} members` : 'Click to view messages'}
+                      </p>
                     </div>
                   </button>
                 ))
@@ -234,46 +300,73 @@ export default function MessagesPage() {
                   <button onClick={() => setActiveConv(null)} className="md:hidden p-1 hover:bg-gray-100 rounded">
                     <ArrowLeft className="h-5 w-5 text-gray-600" />
                   </button>
-                  <div className="w-8 h-8 rounded-full bg-primary-100 flex items-center justify-center">
-                    <span className="text-primary-600 font-bold text-sm">
-                      {(activeConv.partner_name || '?')[0].toUpperCase()}
-                    </span>
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
+                    activeConv.is_group ? 'bg-blue-100' : 'bg-primary-100'
+                  }`}>
+                    {activeConv.is_group ? (
+                      <Users className="h-4 w-4 text-blue-600" />
+                    ) : (
+                      <span className="text-primary-600 font-bold text-sm">
+                        {(activeConv.partner_name || activeConv.name || '?')[0].toUpperCase()}
+                      </span>
+                    )}
                   </div>
                   <div className="flex-1">
-                    <h3 className="font-semibold text-gray-900">{activeConv.partner_name || 'Unknown'}</h3>
-                    <p className="text-xs text-gray-400">End-to-end encrypted</p>
+                    <h3 className="font-semibold text-gray-900">{activeConv.is_group ? activeConv.name : (activeConv.partner_name || 'Unknown')}</h3>
+                    <p className="text-xs text-gray-400">
+                      {activeConv.is_group
+                        ? `${groupMembers.length} members: ${groupMembers.map(m => m.full_name).join(', ')}`
+                        : 'End-to-end encrypted'}
+                    </p>
                   </div>
-                  <button onClick={() => deleteConversation(activeConv.id)}
-                    className="p-2 hover:bg-red-50 rounded-lg transition text-red-400 hover:text-red-600" title="Delete conversation">
-                    <Trash2 className="h-4 w-4" />
-                  </button>
+                  {!activeConv.is_group && (
+                    <button onClick={() => deleteConversation(activeConv.id)}
+                      className="p-2 hover:bg-red-50 rounded-lg transition text-red-400 hover:text-red-600" title="Delete conversation">
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  )}
                 </div>
 
                 {/* Messages */}
                 <div className="flex-1 overflow-y-auto p-4 space-y-3">
                   {messages.map(msg => {
                     const isMe = msg.sender_id === user?.id;
+                    const isDeleted = msg.deleted_for_everyone;
                     return (
                       <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'} group relative`}>
                         {/* Delete button for own messages (left side) */}
-                        {isMe && (
+                        {isMe && !isDeleted && (
                           <button onClick={() => setDeleteMenuMsg(deleteMenuMsg === msg.id ? null : msg.id)}
                             className="self-center mr-2 p-1 opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 transition" title="Delete message">
                             <Trash2 className="h-3.5 w-3.5" />
                           </button>
                         )}
-                        {/* Delete button for received messages (right side after bubble) */}
-                        <div className={`max-w-[70%] px-4 py-2.5 rounded-2xl ${
-                          isMe
-                            ? 'bg-primary-600 text-white rounded-br-md'
-                            : 'bg-gray-100 text-gray-900 rounded-bl-md'
-                        }`}>
-                          <p className="text-sm whitespace-pre-wrap">{msg.ciphertext || msg.content}</p>
-                          <p className={`text-xs mt-1 ${isMe ? 'text-primary-200' : 'text-gray-400'}`}>
-                            {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                          </p>
-                        </div>
-                        {!isMe && (
+                        {isDeleted ? (
+                          <div className="max-w-[70%] px-4 py-2.5 rounded-2xl bg-gray-50 border border-gray-200 border-dashed">
+                            {activeConv.is_group && !isMe && msg.sender_name && (
+                              <p className="text-xs font-semibold text-blue-500 mb-0.5">{msg.sender_name}</p>
+                            )}
+                            <p className="text-sm text-gray-400 italic">This message was deleted</p>
+                            <p className="text-xs mt-1 text-gray-300">
+                              {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </p>
+                          </div>
+                        ) : (
+                          <div className={`max-w-[70%] px-4 py-2.5 rounded-2xl ${
+                            isMe
+                              ? 'bg-primary-600 text-white rounded-br-md'
+                              : 'bg-gray-100 text-gray-900 rounded-bl-md'
+                          }`}>
+                            {activeConv.is_group && !isMe && msg.sender_name && (
+                              <p className={`text-xs font-semibold mb-0.5 ${isMe ? 'text-primary-200' : 'text-blue-500'}`}>{msg.sender_name}</p>
+                            )}
+                            <p className="text-sm whitespace-pre-wrap">{msg.ciphertext || msg.content}</p>
+                            <p className={`text-xs mt-1 ${isMe ? 'text-primary-200' : 'text-gray-400'}`}>
+                              {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </p>
+                          </div>
+                        )}
+                        {!isMe && !isDeleted && (
                           <button onClick={() => setDeleteMenuMsg(deleteMenuMsg === msg.id ? null : msg.id)}
                             className="self-center ml-2 p-1 opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 transition" title="Delete message">
                             <Trash2 className="h-3.5 w-3.5" />
@@ -341,13 +434,23 @@ export default function MessagesPage() {
               <button onClick={() => setShowNewConv(false)}
                 className="p-1 hover:bg-gray-100 rounded-lg"><X className="h-5 w-5" /></button>
             </div>
-            <p className="text-sm text-gray-500 mb-4">Select a connection to start chatting with:</p>
+            <button onClick={handleNewGroup}
+              className="w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg bg-blue-50 hover:bg-blue-100 transition text-left mb-4 border border-blue-200">
+              <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center">
+                <Users className="h-4 w-4 text-blue-600" />
+              </div>
+              <div>
+                <span className="font-medium text-blue-700">Create Group Chat</span>
+                <p className="text-xs text-blue-500">Message multiple people at once</p>
+              </div>
+            </button>
+            <p className="text-sm text-gray-500 mb-3">Or start a direct message:</p>
             <div className="space-y-2 max-h-60 overflow-y-auto">
-              {connections.length === 0 ? (
+              {dmConnections.length === 0 ? (
                 <p className="text-center text-gray-400 py-4 text-sm">
                   {conversations.length > 0 ? 'All connections already have conversations' : 'No connections available. Connect with people first!'}
                 </p>
-              ) : connections.map(c => (
+              ) : dmConnections.map(c => (
                 <button key={c.id} onClick={() => startNewConversation(c.id)}
                   className="w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg hover:bg-gray-50 transition text-left">
                   <div className="w-8 h-8 rounded-full bg-primary-100 flex items-center justify-center">
@@ -357,6 +460,56 @@ export default function MessagesPage() {
                 </button>
               ))}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Create Group Modal */}
+      {showNewGroup && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-900">Create Group Chat</h3>
+              <button onClick={() => setShowNewGroup(false)}
+                className="p-1 hover:bg-gray-100 rounded-lg"><X className="h-5 w-5" /></button>
+            </div>
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-1">Group Name</label>
+              <input
+                type="text" value={groupName} onChange={(e) => setGroupName(e.target.value)}
+                placeholder="Enter group name..." maxLength={100}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+              />
+            </div>
+            <p className="text-sm font-medium text-gray-700 mb-2">
+              Select Members ({selectedMembers.length} selected)
+            </p>
+            <div className="space-y-1 max-h-48 overflow-y-auto mb-4">
+              {connections.length === 0 ? (
+                <p className="text-center text-gray-400 py-4 text-sm">No connections available</p>
+              ) : connections.map(c => (
+                <button key={c.id} onClick={() => toggleMember(c.id)}
+                  className={`w-full flex items-center space-x-3 px-3 py-2 rounded-lg transition text-left ${
+                    selectedMembers.includes(c.id) ? 'bg-blue-50 border border-blue-200' : 'hover:bg-gray-50'
+                  }`}>
+                  <div className={`w-6 h-6 rounded border-2 flex items-center justify-center ${
+                    selectedMembers.includes(c.id) ? 'bg-blue-600 border-blue-600' : 'border-gray-300'
+                  }`}>
+                    {selectedMembers.includes(c.id) && (
+                      <svg className="w-3.5 h-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                      </svg>
+                    )}
+                  </div>
+                  <span className="font-medium text-gray-900 text-sm">{c.name}</span>
+                </button>
+              ))}
+            </div>
+            <button onClick={createGroup}
+              disabled={!groupName.trim() || selectedMembers.length === 0}
+              className="w-full py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition disabled:opacity-50 font-medium">
+              Create Group
+            </button>
           </div>
         </div>
       )}

@@ -23,6 +23,7 @@ class UserResponse(BaseModel):
     is_suspended: bool = False
     totp_verified: bool
     created_at: datetime
+    ip_address: Optional[str] = None
 
     class Config:
         from_attributes = True

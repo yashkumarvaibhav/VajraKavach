@@ -295,7 +295,7 @@ async def change_password(
 
 
 @router.get("/me", response_model=UserResponse)
-async def get_me(current_user: User = Depends(get_current_user)):
+async def get_me(request: Request, current_user: User = Depends(get_current_user)):
     """Get current authenticated user info."""
     return UserResponse(
         id=str(current_user.id),
@@ -306,6 +306,7 @@ async def get_me(current_user: User = Depends(get_current_user)):
         is_suspended=current_user.is_suspended,
         totp_verified=current_user.totp_verified,
         created_at=current_user.created_at,
+        ip_address=request.client.host if request.client else None,
     )
 
 

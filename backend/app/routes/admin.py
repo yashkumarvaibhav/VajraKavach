@@ -43,7 +43,7 @@ async def list_all_users(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role("admin")),
 ):
-    """List all users (admin only)."""
+    """List all users (admin only) — includes last known IP from audit logs."""
     query = select(User)
     if role:
         query = query.where(User.role == role)
@@ -54,8 +54,18 @@ async def list_all_users(
     result = await db.execute(query)
     users = result.scalars().all()
 
-    return [
-        UserResponse(
+    responses = []
+    for u in users:
+        # Get last login IP from audit logs
+        ip_result = await db.execute(
+            select(AuditLog.ip_address)
+            .where(AuditLog.user_id == str(u.id), AuditLog.ip_address.isnot(None))
+            .order_by(AuditLog.created_at.desc())
+            .limit(1)
+        )
+        last_ip = ip_result.scalar_one_or_none()
+
+        responses.append(UserResponse(
             id=str(u.id),
             email=u.email,
             full_name=u.full_name,
@@ -64,9 +74,9 @@ async def list_all_users(
             is_suspended=u.is_suspended,
             totp_verified=u.totp_verified,
             created_at=u.created_at,
-        )
-        for u in users
-    ]
+            ip_address=last_ip,
+        ))
+    return responses
 
 
 @router.get("/users/count")
@@ -362,6 +372,7 @@ async def admin_dashboard(
     from app.models.resume import Resume
 
     user_count = (await db.execute(select(func.count(User.id)))).scalar()
+    active_users = (await db.execute(select(func.count(User.id)).where(User.is_active == True, User.is_suspended == False))).scalar()
     company_count = (await db.execute(select(func.count(Company.id)))).scalar()
     job_count = (await db.execute(select(func.count(Job.id)))).scalar()
     app_count = (await db.execute(select(func.count(Application.id)))).scalar()
@@ -372,6 +383,7 @@ async def admin_dashboard(
 
     return {
         "total_users": user_count,
+        "active_users": active_users,
         "total_companies": company_count,
         "total_jobs": job_count,
         "active_jobs": active_jobs,

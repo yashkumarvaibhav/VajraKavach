@@ -211,7 +211,7 @@ export default function ProfilePage() {
           <User className="h-8 w-8 text-primary-600" />
           <h1 className="text-3xl font-bold text-gray-900">Profile</h1>
         </div>
-        <span className="text-sm text-gray-400">{viewCount} profile views</span>
+        <span className="text-sm text-gray-400">{showViewers ? `${viewCount} profile views` : 'Profile views hidden'}</span>
       </div>
 
       {message && <div className="bg-green-50 text-green-700 p-3 rounded-lg mb-4 text-sm">{message}</div>}
@@ -390,7 +390,7 @@ export default function ProfilePage() {
                   </div>
                   <div>
                     <label className="text-xs text-gray-500">Grade / GPA</label>
-                    <input type="number" step="0.01" min="0" value={edu.grade || ''} onChange={(e) => updateEducation(idx, 'grade', e.target.value)}
+                    <input type="number" step="0.01" min="0" max="100" value={edu.grade || ''} onChange={(e) => updateEducation(idx, 'grade', e.target.value)}
                       className={inputClass} placeholder="9.2" />
                     {edu.grade && parseFloat(edu.grade) < 0 && (
                       <p className="text-xs text-red-500 mt-1">Grade cannot be negative</p>
@@ -401,7 +401,7 @@ export default function ProfilePage() {
                   </div>
                   <div>
                     <label className="text-xs text-gray-500">Max Grade / Scale</label>
-                    <input type="number" step="0.01" min="0" value={edu.max_grade || ''} onChange={(e) => updateEducation(idx, 'max_grade', e.target.value)}
+                    <input type="number" step="0.01" min="0" max="100" value={edu.max_grade || ''} onChange={(e) => updateEducation(idx, 'max_grade', e.target.value)}
                       className={inputClass} placeholder="10" />
                   </div>
                 </div>
@@ -490,7 +490,17 @@ export default function ProfilePage() {
             <h2 className="text-lg font-semibold text-gray-900">Profile Viewers</h2>
             <span className="text-sm text-gray-400">({viewCount} total views)</span>
           </div>
-          <button onClick={() => setShowViewers(!showViewers)}
+          <button onClick={async () => {
+            const newVal = !showViewers;
+            setShowViewers(newVal);
+            try {
+              await api.put('/users/me/profile', { show_viewers: newVal });
+              showMsg(newVal ? 'Profile viewers enabled' : 'Profile viewers disabled');
+            } catch (err) {
+              setShowViewers(!newVal);
+              showMsg('Failed to update setting', true);
+            }
+          }}
             className={`flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg transition ${
               showViewers ? 'bg-green-50 text-green-700 hover:bg-green-100' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
             }`}>

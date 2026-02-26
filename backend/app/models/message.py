@@ -16,12 +16,29 @@ class Conversation(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name = Column(String(255), nullable=True)           # for group chats
     is_group = Column(Boolean, default=False)
+    created_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     messages = relationship("Message", back_populates="conversation", cascade="all, delete-orphan")
+    members = relationship("ConversationMember", back_populates="conversation", cascade="all, delete-orphan")
 
     def __repr__(self):
         return f"<Conversation {self.id} group={self.is_group}>"
+
+
+class ConversationMember(Base):
+    __tablename__ = "conversation_members"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    conversation_id = Column(UUID(as_uuid=True), ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    joined_at = Column(DateTime, default=datetime.utcnow)
+
+    conversation = relationship("Conversation", back_populates="members")
+    user = relationship("User")
+
+    def __repr__(self):
+        return f"<ConversationMember conv={self.conversation_id} user={self.user_id}>"
 
 
 class Message(Base):

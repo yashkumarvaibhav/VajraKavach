@@ -24,6 +24,41 @@ from app.config import settings
 router = APIRouter(prefix="/api/users", tags=["Users & Profiles"])
 
 
+# ── User Search ──────────────────────────────────────────────────────
+
+@router.get("/search", response_model=list[UserResponse])
+async def search_users(
+    q: str = "",
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Search users by name or email (for connections/messaging)."""
+    from sqlalchemy import func as sqlfunc
+    query = select(User).where(User.is_active == True, User.id != current_user.id)
+    if q:
+        query = query.where(
+            or_(
+                User.full_name.ilike(f"%{q}%"),
+                User.email.ilike(f"%{q}%"),
+            )
+        )
+    query = query.limit(20)
+    result = await db.execute(query)
+    users = result.scalars().all()
+    return [
+        UserResponse(
+            id=str(u.id),
+            email=u.email,
+            full_name=u.full_name,
+            role=u.role.value,
+            is_active=u.is_active,
+            totp_verified=u.totp_verified,
+            created_at=u.created_at,
+        )
+        for u in users
+    ]
+
+
 # ── User Account ─────────────────────────────────────────────────────
 
 @router.put("/me", response_model=UserResponse)

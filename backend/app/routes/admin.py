@@ -1,21 +1,38 @@
 """
 VajraKavach — Admin Routes
-User management, moderation, audit log viewing.
+User management, moderation, admin lifecycle, audit log viewing.
 """
 
+import uuid
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from typing import Optional
+from pydantic import BaseModel, EmailStr, Field
 
 from app.database import get_db
-from app.models.user import User
+from app.models.user import User, UserProfile, UserRole
 from app.models.audit import AuditLog
 from app.schemas.user import UserResponse
 from app.dependencies import require_role
 from app.services.audit_service import create_audit_log, verify_audit_chain
+from app.services.auth_service import hash_password
+from app.services.totp_service import generate_totp_secret, get_totp_uri, generate_qr_code_base64
+from app.services.pki_service import generate_rsa_key_pair
 
 router = APIRouter(prefix="/api/admin", tags=["Admin"])
+
+
+# ── Admin-only request schemas ───────────────────────────────────────
+
+class CreateAdminRequest(BaseModel):
+    email: EmailStr
+    password: str = Field(..., min_length=8, max_length=128)
+    full_name: str = Field(..., min_length=1, max_length=255)
+
+
+class PromoteAdminRequest(BaseModel):
+    user_id: str
 
 
 @router.get("/users", response_model=list[UserResponse])
@@ -150,6 +167,136 @@ async def delete_user(
 
     await db.delete(user)
     return {"message": f"User {user.email} has been deleted"}
+
+
+# ── Admin Lifecycle (Only admins can create/promote/demote admins) ───
+
+@router.post("/create-admin", status_code=status.HTTP_201_CREATED)
+async def create_admin(
+    req: CreateAdminRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role("admin")),
+):
+    """Create a new admin account (admin only). Returns TOTP setup info."""
+    # Check if email is taken
+    existing = await db.execute(select(User).where(User.email == req.email))
+    if existing.scalar_one_or_none():
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
+
+    hashed_pw = hash_password(req.password)
+    totp_secret = generate_totp_secret()
+    private_key_pem, public_key_pem = generate_rsa_key_pair()
+
+    admin_id = uuid.uuid4()
+    admin = User(
+        id=admin_id,
+        email=req.email,
+        hashed_password=hashed_pw,
+        full_name=req.full_name,
+        role=UserRole.ADMIN,
+        totp_secret=totp_secret,
+        totp_verified=False,
+        public_key=public_key_pem,
+        is_active=True,
+        is_suspended=False,
+    )
+    db.add(admin)
+
+    profile = UserProfile(
+        id=uuid.uuid4(),
+        user_id=admin_id,
+    )
+    db.add(profile)
+    await db.flush()
+
+    await create_audit_log(
+        db=db,
+        action="admin.create_admin",
+        user_id=str(current_user.id),
+        resource="user",
+        resource_id=str(admin_id),
+        details={"email": req.email, "created_by": current_user.email},
+        ip_address=request.client.host if request.client else None,
+    )
+
+    totp_uri = get_totp_uri(totp_secret, req.email)
+    qr_b64 = generate_qr_code_base64(totp_uri)
+
+    return {
+        "message": f"Admin user {req.email} created successfully",
+        "user_id": str(admin_id),
+        "totp_secret": totp_secret,
+        "qr_code_base64": qr_b64,
+    }
+
+
+@router.put("/users/{user_id}/promote-admin")
+async def promote_to_admin(
+    user_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role("admin")),
+):
+    """Promote an existing user to admin role (admin only)."""
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    if user.role == UserRole.ADMIN:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User is already an admin")
+
+    old_role = user.role.value
+    user.role = UserRole.ADMIN
+    await db.flush()
+
+    await create_audit_log(
+        db=db,
+        action="admin.promote_user",
+        user_id=str(current_user.id),
+        resource="user",
+        resource_id=str(user.id),
+        details={"email": user.email, "old_role": old_role, "new_role": "admin"},
+        ip_address=request.client.host if request.client else None,
+    )
+
+    return {"message": f"User {user.email} has been promoted to admin"}
+
+
+@router.put("/users/{user_id}/demote-admin")
+async def demote_from_admin(
+    user_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role("admin")),
+):
+    """Remove admin privileges from a user (admin only)."""
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    if str(user.id) == str(current_user.id):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot demote yourself")
+
+    if user.role != UserRole.ADMIN:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User is not an admin")
+
+    user.role = UserRole.USER
+    await db.flush()
+
+    await create_audit_log(
+        db=db,
+        action="admin.demote_user",
+        user_id=str(current_user.id),
+        resource="user",
+        resource_id=str(user.id),
+        details={"email": user.email, "old_role": "admin", "new_role": "user"},
+        ip_address=request.client.host if request.client else None,
+    )
+
+    return {"message": f"Admin privileges removed from {user.email}"}
 
 
 @router.get("/audit-logs")

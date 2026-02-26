@@ -43,12 +43,15 @@ async def register(
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
 
-    # Validate role
+    # Validate role — admin registration is NEVER allowed from public endpoint
     role = UserRole.USER
     if req.role == "recruiter":
         role = UserRole.RECRUITER
     elif req.role == "admin":
-        role = UserRole.ADMIN
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin accounts cannot be created through public registration.",
+        )
 
     # Hash password with Argon2
     hashed_pw = hash_password(req.password)

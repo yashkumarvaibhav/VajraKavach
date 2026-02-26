@@ -348,7 +348,7 @@ export default function MessagesPage() {
                             )}
                             <p className="text-sm text-gray-400 italic">This message was deleted</p>
                             <p className="text-xs mt-1 text-gray-300">
-                              {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              {new Date(msg.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })}
                             </p>
                           </div>
                         ) : (
@@ -362,7 +362,7 @@ export default function MessagesPage() {
                             )}
                             <p className="text-sm whitespace-pre-wrap">{msg.ciphertext || msg.content}</p>
                             <p className={`text-xs mt-1 ${isMe ? 'text-primary-200' : 'text-gray-400'}`}>
-                              {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              {new Date(msg.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' })}
                             </p>
                           </div>
                         )}

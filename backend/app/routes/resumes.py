@@ -230,10 +230,17 @@ async def verify_resume_integrity(
 async def delete_resume(
     resume_id: str,
     request: Request,
+    totp_token: str = Query(..., description="TOTP token required for resume deletion"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Delete a resume (owner or admin only)."""
+    """Delete a resume (owner or admin only). Requires TOTP verification."""
+    # Verify TOTP first (sensitive operation)
+    if not current_user.totp_secret:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="TOTP not configured")
+    if not verify_totp(current_user.totp_secret, totp_token):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid TOTP token")
+
     result = await db.execute(select(Resume).where(Resume.id == resume_id))
     resume = result.scalar_one_or_none()
     if not resume:

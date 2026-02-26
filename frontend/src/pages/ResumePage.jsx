@@ -102,14 +102,16 @@ export default function ResumePage() {
   };
 
   const deleteResume = async () => {
-    if (!confirm('Are you sure you want to delete your resume?')) return;
+    const token = prompt('This is a sensitive operation.\nEnter your TOTP code to confirm resume deletion:');
+    if (!token) return;
+    if (!confirm('Are you sure you want to permanently delete your resume? This cannot be undone.')) return;
     try {
-      await api.delete(`/resumes/${resume.id}`);
+      await api.delete(`/resumes/${resume.id}?totp_token=${encodeURIComponent(token)}`);
       setResume(null);
       setMessage('Resume deleted.');
       setTimeout(() => setMessage(''), 3000);
     } catch (err) {
-      setError(err.response?.data?.detail || 'Delete failed');
+      setError(err.response?.data?.detail || 'Delete failed. Check your TOTP code.');
     }
   };
 

@@ -526,7 +526,7 @@ export default function AdminDashboard() {
                         <p className="text-sm text-gray-600 mt-1 whitespace-pre-wrap">{a.content}</p>
                         <div className="flex items-center gap-3 mt-2 text-xs text-gray-400">
                           <span>By {a.sender_name || 'Admin'}</span>
-                          <span>{new Date(a.created_at).toLocaleString()}</span>
+                          <span>{new Date(a.created_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}</span>
                           <span className="px-2 py-0.5 bg-green-50 text-green-600 rounded-full text-xs">Server-side encrypted</span>
                         </div>
                       </div>
@@ -559,7 +559,7 @@ export default function AdminDashboard() {
               <tbody className="divide-y divide-gray-50">
                 {auditLogs.map(log => (
                   <tr key={log.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3 text-sm text-gray-600">{new Date(log.created_at).toLocaleString()}</td>
+                    <td className="px-4 py-3 text-sm text-gray-600">{new Date(log.created_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}</td>
                     <td className="px-4 py-3 text-sm font-medium text-gray-900">{log.action}</td>
                     <td className="px-4 py-3 text-sm text-gray-600">{log.user_id || 'System'}</td>
                     <td className="px-4 py-3">

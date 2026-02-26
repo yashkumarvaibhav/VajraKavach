@@ -4,7 +4,9 @@ Profile CRUD, connections, profile viewing.
 """
 
 import uuid
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+import os
+import aiofiles
+from fastapi import APIRouter, Depends, HTTPException, status, Request, UploadFile, File
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_, and_
 
@@ -13,12 +15,111 @@ from app.models.user import User, UserProfile
 from app.models.connection import Connection, ConnectionStatus
 from app.schemas.user import (
     UserResponse, UserProfileUpdate, UserProfileResponse,
-    ConnectionRequest, ConnectionResponse,
+    ConnectionRequest, ConnectionResponse, UserNameUpdate,
 )
 from app.dependencies import get_current_user
 from app.services.audit_service import create_audit_log
+from app.config import settings
 
 router = APIRouter(prefix="/api/users", tags=["Users & Profiles"])
+
+
+# ── User Account ─────────────────────────────────────────────────────
+
+@router.put("/me", response_model=UserResponse)
+async def update_my_account(
+    update: UserNameUpdate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Update account-level fields (full_name, phone)."""
+    if update.full_name is not None:
+        current_user.full_name = update.full_name
+    if update.phone is not None:
+        current_user.phone = update.phone
+
+    await db.flush()
+    await create_audit_log(
+        db=db,
+        action="user.account_update",
+        user_id=str(current_user.id),
+        resource="user",
+        resource_id=str(current_user.id),
+        details={"updated_fields": update.model_dump(exclude_unset=True)},
+        ip_address=request.client.host if request.client else None,
+    )
+
+    return UserResponse(
+        id=str(current_user.id),
+        email=current_user.email,
+        full_name=current_user.full_name,
+        role=current_user.role.value,
+        is_active=current_user.is_active,
+        totp_verified=current_user.totp_verified,
+        created_at=current_user.created_at,
+    )
+
+
+# ── Profile Picture ──────────────────────────────────────────────────
+
+ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
+MAX_IMAGE_SIZE = 5 * 1024 * 1024  # 5 MB
+
+@router.post("/me/profile-picture")
+async def upload_profile_picture(
+    file: UploadFile = File(...),
+    request: Request = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Upload a profile picture (max 5 MB, jpg/png/webp/gif)."""
+    if file.content_type not in ALLOWED_IMAGE_TYPES:
+        raise HTTPException(status_code=400, detail="Only JPEG, PNG, WebP, and GIF images are allowed")
+
+    contents = await file.read()
+    if len(contents) > MAX_IMAGE_SIZE:
+        raise HTTPException(status_code=400, detail="Image must be under 5 MB")
+
+    # Save to uploads/avatars/<user_id>.<ext>
+    ext = file.filename.rsplit('.', 1)[-1].lower() if '.' in file.filename else 'jpg'
+    avatar_dir = os.path.join(settings.UPLOAD_DIR, "avatars")
+    os.makedirs(avatar_dir, exist_ok=True)
+    filename = f"{current_user.id}.{ext}"
+    filepath = os.path.join(avatar_dir, filename)
+
+    async with aiofiles.open(filepath, "wb") as f:
+        await f.write(contents)
+
+    # Update profile
+    result = await db.execute(
+        select(UserProfile).where(UserProfile.user_id == current_user.id)
+    )
+    profile = result.scalar_one_or_none()
+    if profile:
+        profile.profile_picture_url = f"/api/users/me/profile-picture/{filename}"
+        await db.flush()
+
+    await create_audit_log(
+        db=db,
+        action="user.profile_picture_upload",
+        user_id=str(current_user.id),
+        resource="user_profile",
+        details={"filename": filename, "size_bytes": len(contents)},
+        ip_address=request.client.host if request.client else None,
+    )
+
+    return {"url": f"/api/users/me/profile-picture/{filename}"}
+
+
+@router.get("/me/profile-picture/{filename}")
+async def get_profile_picture(filename: str):
+    """Serve a profile picture file."""
+    from fastapi.responses import FileResponse
+    filepath = os.path.join(settings.UPLOAD_DIR, "avatars", filename)
+    if not os.path.isfile(filepath):
+        raise HTTPException(status_code=404, detail="Image not found")
+    return FileResponse(filepath)
 
 
 # ── Profile ──────────────────────────────────────────────────────────
@@ -39,6 +140,8 @@ async def get_my_profile(
     return UserProfileResponse(
         id=str(profile.id),
         user_id=str(profile.user_id),
+        full_name=current_user.full_name,
+        email=current_user.email,
         headline=profile.headline,
         location=profile.location,
         bio=profile.bio,
@@ -86,6 +189,8 @@ async def update_my_profile(
     return UserProfileResponse(
         id=str(profile.id),
         user_id=str(profile.user_id),
+        full_name=current_user.full_name,
+        email=current_user.email,
         headline=profile.headline,
         location=profile.location,
         bio=profile.bio,

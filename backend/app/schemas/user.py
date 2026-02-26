@@ -39,9 +39,16 @@ class UserProfileUpdate(BaseModel):
     show_viewers: Optional[bool] = None
 
 
+class UserNameUpdate(BaseModel):
+    full_name: Optional[str] = None
+    phone: Optional[str] = None
+
+
 class UserProfileResponse(BaseModel):
     id: str
     user_id: str
+    full_name: Optional[str] = None
+    email: Optional[str] = None
     headline: Optional[str] = None
     location: Optional[str] = None
     bio: Optional[str] = None

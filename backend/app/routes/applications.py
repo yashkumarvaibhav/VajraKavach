@@ -107,6 +107,37 @@ async def apply_to_job(
     return await _enrich_application(db, application)
 
 
+@router.delete("/{application_id}", status_code=204)
+async def withdraw_application(
+    application_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Withdraw (delete) an application. Only the applicant can withdraw."""
+    result = await db.execute(
+        select(Application).where(
+            Application.id == application_id,
+            Application.user_id == current_user.id,
+        )
+    )
+    application = result.scalar_one_or_none()
+    if not application:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Application not found")
+
+    await create_audit_log(
+        db=db,
+        action="application.withdraw",
+        user_id=str(current_user.id),
+        resource="application",
+        resource_id=str(application.id),
+        details={"job_id": str(application.job_id)},
+        ip_address=request.client.host if request.client else None,
+    )
+
+    await db.delete(application)
+
+
 @router.get("/my", response_model=list[ApplicationResponse])
 async def my_applications(
     db: AsyncSession = Depends(get_db),

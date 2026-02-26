@@ -107,6 +107,20 @@ export default function AdminDashboard() {
     }
   };
 
+  const deleteUser = async (userId, email) => {
+    if (!confirm(`Permanently delete user ${email}? This action cannot be undone. All their data will be removed.`)) return;
+    setActionLoading(userId);
+    try {
+      await api.delete(`/admin/users/${userId}`);
+      fetchUsers();
+      fetchDashboard();
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Failed to delete user');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   const filteredUsers = searchQuery
     ? users.filter(u =>
         u.full_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -210,6 +224,7 @@ export default function AdminDashboard() {
                     <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">User</th>
                     <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Role</th>
                     <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Status</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">IP Address</th>
                     <th className="text-right px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Actions</th>
                   </tr>
                 </thead>
@@ -242,19 +257,33 @@ export default function AdminDashboard() {
                           {u.is_suspended ? 'Suspended' : u.is_active ? 'Active' : 'Inactive'}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-right">
+                      <td className="px-4 py-3">
+                        <span className="text-xs font-mono text-gray-500">
+                          {u.ip_address || '—'}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-right space-x-2">
                         {u.role !== 'admin' && (
-                          <button
-                            onClick={() => toggleSuspend(u.id, u.is_suspended)}
-                            disabled={actionLoading === u.id}
-                            className={`px-3 py-1.5 text-xs font-medium rounded-lg transition ${
-                              u.is_suspended
-                                ? 'bg-green-600 text-white hover:bg-green-700'
-                                : 'bg-red-100 text-red-700 hover:bg-red-200'
-                            } disabled:opacity-50`}
-                          >
-                            {actionLoading === u.id ? '...' : u.is_suspended ? 'Activate' : 'Suspend'}
-                          </button>
+                          <>
+                            <button
+                              onClick={() => toggleSuspend(u.id, u.is_suspended)}
+                              disabled={actionLoading === u.id}
+                              className={`px-3 py-1.5 text-xs font-medium rounded-lg transition ${
+                                u.is_suspended
+                                  ? 'bg-green-600 text-white hover:bg-green-700'
+                                  : 'bg-red-100 text-red-700 hover:bg-red-200'
+                              } disabled:opacity-50`}
+                            >
+                              {actionLoading === u.id ? '...' : u.is_suspended ? 'Activate' : 'Suspend'}
+                            </button>
+                            <button
+                              onClick={() => deleteUser(u.id, u.email)}
+                              disabled={actionLoading === u.id}
+                              className="px-3 py-1.5 text-xs font-medium rounded-lg bg-red-600 text-white hover:bg-red-700 transition disabled:opacity-50"
+                            >
+                              {actionLoading === u.id ? '...' : 'Delete'}
+                            </button>
+                          </>
                         )}
                       </td>
                     </tr>

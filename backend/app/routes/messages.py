@@ -121,9 +121,19 @@ async def list_conversations(
     conversations = result.scalars().all()
 
     responses = []
+    uid = str(current_user.id)
     for c in conversations:
         partner_id = None
         partner_name = None
+
+        # Check if all messages in this conversation are deleted for the current user
+        all_msgs_result = await db.execute(
+            select(Message).where(Message.conversation_id == c.id)
+        )
+        all_msgs = all_msgs_result.scalars().all()
+        visible_msgs = [m for m in all_msgs if not m.deleted_for_everyone and uid not in (m.deleted_for or [])]
+        if len(all_msgs) > 0 and len(visible_msgs) == 0:
+            continue  # Skip conversations where all messages are deleted for this user
 
         if not c.is_group:
             # Find the other user in this conversation
@@ -162,7 +172,8 @@ async def get_conversation_messages(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Get all messages in a conversation (returns ciphertext — client decrypts)."""
+    """Get all messages in a conversation (returns ciphertext — client decrypts).
+    Filters out messages that were soft-deleted for the current user."""
     result = await db.execute(
         select(Message).where(
             Message.conversation_id == conversation_id,
@@ -183,6 +194,7 @@ async def get_conversation_messages(
     )
     messages = result.scalars().all()
 
+    uid = str(current_user.id)
     return [
         MessageResponse(
             id=str(m.id),
@@ -195,6 +207,7 @@ async def get_conversation_messages(
             created_at=m.created_at,
         )
         for m in messages
+        if not m.deleted_for_everyone and uid not in (m.deleted_for or [])
     ]
 
 
@@ -219,20 +232,36 @@ async def get_user_public_key(
 @router.delete("/{message_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_message(
     message_id: str,
+    for_everyone: bool = False,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Delete a specific message (only the sender can delete)."""
+    """
+    Soft-delete a message.
+    - for_everyone=false (default): deletes for the current user only
+    - for_everyone=true: deletes for everyone (only the sender can do this)
+    """
     result = await db.execute(
-        select(Message).where(
-            Message.id == message_id,
-            Message.sender_id == current_user.id,
-        )
+        select(Message).where(Message.id == message_id)
     )
     msg = result.scalar_one_or_none()
     if not msg:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Message not found or not your message")
-    await db.delete(msg)
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Message not found")
+
+    uid = str(current_user.id)
+    # Verify user is a participant
+    if uid != str(msg.sender_id) and uid != str(msg.recipient_id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not your message")
+
+    if for_everyone:
+        if uid != str(msg.sender_id):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only the sender can delete for everyone")
+        msg.deleted_for_everyone = True
+    else:
+        deleted = list(msg.deleted_for or [])
+        if uid not in deleted:
+            deleted.append(uid)
+        msg.deleted_for = deleted
 
 
 @router.delete("/conversations/{conversation_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -241,7 +270,9 @@ async def delete_conversation(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Delete a conversation and all its messages (only if you are a participant)."""
+    """Soft-delete a conversation for the current user only.
+    Marks all messages as deleted_for the current user.
+    The other participant's view is not affected."""
     # Verify participation
     result = await db.execute(
         select(Message).where(
@@ -255,18 +286,14 @@ async def delete_conversation(
     if not result.scalar_one_or_none():
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not part of this conversation")
 
-    # Delete all messages in the conversation
+    uid = str(current_user.id)
+    # Mark all messages in conversation as deleted for this user
     msg_result = await db.execute(
         select(Message).where(Message.conversation_id == conversation_id)
     )
     msgs = msg_result.scalars().all()
     for m in msgs:
-        await db.delete(m)
-
-    # Delete the conversation itself
-    conv_result = await db.execute(
-        select(Conversation).where(Conversation.id == conversation_id)
-    )
-    conv = conv_result.scalar_one_or_none()
-    if conv:
-        await db.delete(conv)
+        deleted = list(m.deleted_for or [])
+        if uid not in deleted:
+            deleted.append(uid)
+        m.deleted_for = deleted

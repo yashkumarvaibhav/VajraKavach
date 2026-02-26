@@ -17,6 +17,8 @@ export default function VirtualKeyboard({
   onKeyPress,
   onBackspace,
   onClear,
+  // UI options
+  hideToggle = false,
 }) {
   const [shuffledDigits, setShuffledDigits] = useState([]);
   const [usePhysical, setUsePhysical] = useState(false);

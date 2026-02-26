@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
 import VirtualKeyboard from '../components/VirtualKeyboard';
-import { Shield, Users, BarChart3, FileText, AlertTriangle, UserX, UserCheck, Search, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Shield, Users, BarChart3, FileText, AlertTriangle, UserX, UserCheck, Search, ChevronLeft, ChevronRight, Briefcase } from 'lucide-react';
 
 export default function AdminDashboard() {
   const { user } = useAuth();
@@ -10,6 +10,7 @@ export default function AdminDashboard() {
   const [dashboard, setDashboard] = useState(null);
   const [users, setUsers] = useState([]);
   const [auditLogs, setAuditLogs] = useState([]);
+  const [allJobs, setAllJobs] = useState([]);
   const [totpToken, setTotpToken] = useState('');
   const [verified, setVerified] = useState(false);
   const [verifyError, setVerifyError] = useState('');
@@ -64,7 +65,30 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     if (verified && tab === 'audit') fetchAuditLogs(auditPage);
+    if (verified && tab === 'jobs') fetchAdminJobs();
   }, [verified, tab]);
+
+  const fetchAdminJobs = async () => {
+    try {
+      const res = await api.get('/admin/jobs');
+      setAllJobs(res.data || []);
+    } catch (err) {
+      console.error('Admin jobs error:', err);
+    }
+  };
+
+  const toggleJobActive = async (jobId) => {
+    setActionLoading(jobId);
+    try {
+      await api.put(`/admin/jobs/${jobId}/delist`);
+      fetchAdminJobs();
+      fetchDashboard();
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Failed to toggle job');
+    } finally {
+      setActionLoading(null);
+    }
+  };
 
   const toggleSuspend = async (userId, currentSuspended) => {
     setActionLoading(userId);
@@ -136,6 +160,7 @@ export default function AdminDashboard() {
         {[
           { key: 'overview', label: 'Overview', icon: BarChart3 },
           { key: 'users', label: 'Users', icon: Users },
+          { key: 'jobs', label: 'Jobs', icon: Briefcase },
           { key: 'audit', label: 'Audit Logs', icon: FileText },
         ].map(t => (
           <button key={t.key} onClick={() => setTab(t.key)}
@@ -238,6 +263,62 @@ export default function AdminDashboard() {
               </table>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Jobs */}
+      {tab === 'jobs' && (
+        <div>
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+            <table className="w-full">
+              <thead>
+                <tr className="bg-gray-50 border-b border-gray-100">
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Job Title</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Company</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Type</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Status</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Created</th>
+                  <th className="text-right px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {allJobs.map(job => (
+                  <tr key={job.id} className="hover:bg-gray-50 transition">
+                    <td className="px-4 py-3">
+                      <p className="font-medium text-gray-900 text-sm">{job.title}</p>
+                      {job.location && <p className="text-xs text-gray-400">{job.location}</p>}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-600">{job.company_name}</td>
+                    <td className="px-4 py-3 text-sm text-gray-600 capitalize">{job.job_type?.replace('_', ' ')}</td>
+                    <td className="px-4 py-3">
+                      <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${
+                        job.is_active ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
+                      }`}>
+                        {job.is_active ? 'Active' : 'Delisted'}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-500">{new Date(job.created_at).toLocaleDateString()}</td>
+                    <td className="px-4 py-3 text-right">
+                      <button
+                        onClick={() => toggleJobActive(job.id)}
+                        disabled={actionLoading === job.id}
+                        className={`px-3 py-1.5 text-xs font-medium rounded-lg transition ${
+                          job.is_active
+                            ? 'bg-red-100 text-red-700 hover:bg-red-200'
+                            : 'bg-green-600 text-white hover:bg-green-700'
+                        } disabled:opacity-50`}
+                      >
+                        {actionLoading === job.id ? '...' : job.is_active ? 'Delist' : 'Re-activate'}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+                {allJobs.length === 0 && (
+                  <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400">No jobs found</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 

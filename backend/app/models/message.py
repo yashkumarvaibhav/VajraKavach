@@ -5,7 +5,7 @@ VajraKavach — Message & Conversation Models (E2E Encrypted Messaging)
 import uuid
 from datetime import datetime
 from sqlalchemy import Column, String, Text, DateTime, ForeignKey, Boolean, Integer
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, JSON
 from sqlalchemy.orm import relationship
 from app.database import Base
 
@@ -38,6 +38,11 @@ class Message(Base):
     signature = Column(Text, nullable=True)
     # Whether this is server-side encrypted (non-E2E) announcement
     is_server_encrypted = Column(Boolean, default=False)
+
+    # Soft-delete support: list of user IDs who deleted this message for themselves
+    deleted_for = Column(JSON, default=[])
+    # If True, message is deleted for everyone (only sender can do this)
+    deleted_for_everyone = Column(Boolean, default=False)
 
     created_at = Column(DateTime, default=datetime.utcnow)
 

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
-import { Briefcase, MapPin, Clock, DollarSign, Search, Building2, Calendar } from 'lucide-react';
+import { Briefcase, MapPin, Clock, DollarSign, Search, Building2, Calendar, CheckCircle } from 'lucide-react';
 
 export default function JobsPage() {
   const { user } = useAuth();
@@ -10,11 +10,20 @@ export default function JobsPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [applying, setApplying] = useState(null);
   const [coverLetter, setCoverLetter] = useState('');
+  const [selectedResume, setSelectedResume] = useState('');
+  const [resumes, setResumes] = useState([]);
+  const [appliedJobIds, setAppliedJobIds] = useState(new Set());
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
 
+  const isJobSeeker = user?.role === 'user';
+
   useEffect(() => {
     fetchJobs();
+    if (isJobSeeker) {
+      fetchResumes();
+      fetchMyApplications();
+    }
   }, []);
 
   const fetchJobs = async (q = '') => {
@@ -31,14 +40,38 @@ export default function JobsPage() {
     }
   };
 
+  const fetchResumes = async () => {
+    try {
+      const res = await api.get('/resumes/');
+      setResumes(res.data || []);
+    } catch (err) {
+      console.error('Fetch resumes error:', err);
+    }
+  };
+
+  const fetchMyApplications = async () => {
+    try {
+      const res = await api.get('/applications/my');
+      const ids = new Set((res.data || []).map(a => a.job_id));
+      setAppliedJobIds(ids);
+    } catch (err) {
+      console.error('Fetch applications error:', err);
+    }
+  };
+
   const handleSearch = () => fetchJobs(searchQuery);
 
   const applyForJob = async (jobId) => {
     setError('');
     try {
-      await api.post('/applications/', { job_id: jobId, cover_letter: coverLetter });
+      const payload = { job_id: jobId };
+      if (coverLetter.trim()) payload.cover_note = coverLetter.trim();
+      if (selectedResume) payload.resume_id = selectedResume;
+      await api.post('/applications/', payload);
       setApplying(null);
       setCoverLetter('');
+      setSelectedResume('');
+      setAppliedJobIds(prev => new Set([...prev, jobId]));
       setMessage('Application submitted successfully!');
       setTimeout(() => setMessage(''), 3000);
     } catch (err) {
@@ -103,9 +136,10 @@ export default function JobsPage() {
                   </div>
                 </div>
                 <span className={`px-3 py-1 text-xs font-medium rounded-full ${
+                  appliedJobIds.has(job.id) ? 'bg-blue-50 text-blue-700' :
                   job.is_active ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
                 }`}>
-                  {job.is_active ? 'Active' : 'Closed'}
+                  {appliedJobIds.has(job.id) ? 'Applied' : job.is_active ? 'Active' : 'Closed'}
                 </span>
               </div>
 
@@ -127,10 +161,22 @@ export default function JobsPage() {
                 )}
               </div>
 
-              {isJobSeeker && job.is_active && (
+              {isJobSeeker && job.is_active && !appliedJobIds.has(job.id) && (
                 <div className="mt-4">
                   {applying === job.id ? (
                     <div className="space-y-3">
+                      {resumes.length > 0 && (
+                        <div>
+                          <label className="text-sm font-medium text-gray-700 mb-1 block">Select Resume</label>
+                          <select value={selectedResume} onChange={(e) => setSelectedResume(e.target.value)}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 outline-none">
+                            <option value="">No resume attached</option>
+                            {resumes.map(r => (
+                              <option key={r.id} value={r.id}>{r.title || r.filename || 'Resume'}</option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
                       <textarea
                         value={coverLetter}
                         onChange={(e) => setCoverLetter(e.target.value)}
@@ -144,7 +190,7 @@ export default function JobsPage() {
                           className="px-4 py-2 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 transition">
                           Submit Application
                         </button>
-                        <button onClick={() => { setApplying(null); setError(''); setCoverLetter(''); }}
+                        <button onClick={() => { setApplying(null); setError(''); setCoverLetter(''); setSelectedResume(''); }}
                           className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 transition">
                           Cancel
                         </button>
@@ -156,6 +202,11 @@ export default function JobsPage() {
                       Apply Now
                     </button>
                   )}
+                </div>
+              )}
+              {isJobSeeker && appliedJobIds.has(job.id) && (
+                <div className="mt-4 flex items-center gap-2 text-sm text-blue-700">
+                  <CheckCircle className="h-4 w-4" /> You have applied to this job
                 </div>
               )}
             </div>

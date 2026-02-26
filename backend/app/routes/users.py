@@ -324,10 +324,9 @@ async def view_user_profile(
 
     # Increment view count and record viewer
     if str(current_user.id) != user_id:
-        current_count = profile.view_count if isinstance(profile.view_count, int) else 0
-        profile.view_count = current_count + 1
+        profile.view_count = (profile.view_count or 0) + 1
 
-        # Upsert profile view record (update timestamp if already viewed)
+        # Upsert profile view record (update timestamp and visit count if already viewed)
         existing_view = await db.execute(
             select(ProfileView).where(
                 ProfileView.profile_user_id == uuid.UUID(user_id),
@@ -338,11 +337,13 @@ async def view_user_profile(
         if pv:
             from datetime import datetime
             pv.viewed_at = datetime.utcnow()
+            pv.visit_count = (pv.visit_count or 1) + 1
         else:
             pv = ProfileView(
                 id=uuid.uuid4(),
                 profile_user_id=uuid.UUID(user_id),
                 viewer_id=current_user.id,
+                visit_count=1,
             )
             db.add(pv)
 
@@ -431,6 +432,7 @@ async def get_profile_viewers(
                 "headline": viewer_profile.headline if viewer_profile else None,
                 "picture": viewer_profile.profile_picture_url if viewer_profile else None,
                 "viewed_at": v.viewed_at.isoformat() if v.viewed_at else None,
+                "visit_count": v.visit_count or 1,
             })
 
     # Total unique viewers count

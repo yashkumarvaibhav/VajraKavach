@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
-import { BarChart3, Users, MessageSquare, FileText, Briefcase, Building2, Shield, ClipboardList } from 'lucide-react';
+import { BarChart3, Users, MessageSquare, FileText, Briefcase, Building2, Shield, ClipboardList, Eye } from 'lucide-react';
 
 export default function DashboardPage() {
   const { user } = useAuth();
@@ -17,12 +17,14 @@ export default function DashboardPage() {
         const s = {};
 
         if (user?.role !== 'admin') {
-          const [connRes, convRes] = await Promise.all([
+          const [connRes, convRes, profileRes] = await Promise.all([
             api.get('/users/connections'),
             api.get(endpoints.conversations),
+            api.get('/users/me/profile'),
           ]);
           s.connections = (connRes.data || []).filter(c => c.status === 'accepted').length;
           s.conversations = (convRes.data || []).length;
+          s.profileViews = profileRes.data?.view_count || 0;
         } else {
           s.connections = 0;
           s.conversations = 0;
@@ -55,6 +57,7 @@ export default function DashboardPage() {
     { icon: FileText, label: 'My Resume', desc: 'Manage your encrypted resume', to: '/resume', color: 'purple' },
     { icon: Users, label: 'Connections', desc: `${stats?.connections || 0} active connections`, to: '/connections', color: 'green' },
     { icon: MessageSquare, label: 'Messages', desc: `${stats?.conversations || 0} conversations`, to: '/messages', color: 'teal' },
+    { icon: Eye, label: 'Profile Views', desc: `${stats?.profileViews || 0} total views`, to: '/profile', color: 'purple' },
     { icon: Shield, label: 'Security', desc: 'Change password & TOTP', to: '/security', color: 'red' },
   ];
 
@@ -63,6 +66,7 @@ export default function DashboardPage() {
     { icon: Briefcase, label: 'My Job Postings', desc: `${stats?.myJobs || 0} active listings`, to: '/companies?tab=jobs', color: 'indigo' },
     { icon: Users, label: 'Connections', desc: `${stats?.connections || 0} active connections`, to: '/connections', color: 'green' },
     { icon: MessageSquare, label: 'Messages', desc: `${stats?.conversations || 0} conversations`, to: '/messages', color: 'teal' },
+    { icon: Eye, label: 'Profile Views', desc: `${stats?.profileViews || 0} total views`, to: '/profile', color: 'purple' },
     { icon: Shield, label: 'Security', desc: 'Change password & TOTP', to: '/security', color: 'red' },
   ];
 

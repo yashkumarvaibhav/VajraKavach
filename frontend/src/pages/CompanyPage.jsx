@@ -537,7 +537,7 @@ export default function CompanyPage() {
                                         ) : (
                                           <>
                                             <p className="font-semibold text-orange-800">
-                                              Match Score: <span className={`${matchScores[app.id].score >= 70 ? 'text-green-700' : matchScores[app.id].score >= 40 ? 'text-yellow-700' : 'text-red-700'}`}>{matchScores[app.id].score}%</span>
+                                              Match Score: <span className={`${matchScores[app.id].match_score >= 70 ? 'text-green-700' : matchScores[app.id].match_score >= 40 ? 'text-yellow-700' : 'text-red-700'}`}>{matchScores[app.id].match_score}%</span>
                                             </p>
                                             {matchScores[app.id].matched_skills?.length > 0 && (
                                               <p className="text-green-700 mt-1">Matched: {matchScores[app.id].matched_skills.join(', ')}</p>

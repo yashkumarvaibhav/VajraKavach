@@ -397,17 +397,11 @@ async def view_user_profile(
         "profile_picture_url": profile.profile_picture_url,
         "privacy_settings": None,
         "view_count": 0,
-        "show_viewers": profile.show_viewers,
+        "show_viewers": False,
     }
 
-    # Compute view_count from ProfileView records
-    if profile.show_viewers:
-        from sqlalchemy import func as sa_func
-        vc_result = await db.execute(
-            select(sa_func.coalesce(sa_func.sum(ProfileView.visit_count), 0))
-            .where(ProfileView.profile_user_id == uuid.UUID(user_id))
-        )
-        response_data["view_count"] = int(vc_result.scalar() or 0)
+    # view_count is private — only visible to the profile owner via /me/profile
+    # Do NOT expose it to visitors
 
     is_owner = str(current_user.id) == user_id
     is_admin = current_user.role.value == "admin"

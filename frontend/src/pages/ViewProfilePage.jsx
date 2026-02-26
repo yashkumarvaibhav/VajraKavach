@@ -224,9 +224,7 @@ export default function ViewProfilePage() {
         </div>
       )}
 
-      {profile.view_count > 0 && (
-        <p className="text-xs text-gray-400 text-center">{profile.view_count} profile views</p>
-      )}
+      {/* view_count is private — only profile owner can see it */}
     </div>
   );
 }

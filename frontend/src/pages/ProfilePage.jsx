@@ -211,7 +211,7 @@ export default function ProfilePage() {
           <User className="h-8 w-8 text-primary-600" />
           <h1 className="text-3xl font-bold text-gray-900">Profile</h1>
         </div>
-        <span className="text-sm text-gray-400">{showViewers ? `${viewCount} profile views` : 'Profile views hidden'}</span>
+        <span className="text-sm text-gray-400">{viewCount} profile views</span>
       </div>
 
       {message && <div className="bg-green-50 text-green-700 p-3 rounded-lg mb-4 text-sm">{message}</div>}
@@ -492,10 +492,14 @@ export default function ProfilePage() {
           </div>
           <button onClick={async () => {
             const newVal = !showViewers;
+            const msg = newVal
+              ? 'Enabling this will allow you to see who viewed your profile. Other users will also know you viewed theirs. Continue?'
+              : 'Disabling this will hide your viewer list. You won\u2019t see who visited your profile, and others won\u2019t see you in their viewer list. Your view count will still be tracked privately. Continue?';
+            if (!confirm(msg)) return;
             setShowViewers(newVal);
             try {
               await api.put('/users/me/profile', { show_viewers: newVal });
-              showMsg(newVal ? 'Profile viewers enabled' : 'Profile viewers disabled');
+              showMsg(newVal ? 'Profile viewers enabled' : 'Profile viewers hidden');
             } catch (err) {
               setShowViewers(!newVal);
               showMsg('Failed to update setting', true);
@@ -510,9 +514,10 @@ export default function ProfilePage() {
         </div>
 
         {!showViewers ? (
-          <p className="text-sm text-gray-400 text-center py-4">
-            Profile viewer tracking is disabled. Toggle above and save to enable.
-          </p>
+          <div className="text-center py-4">
+            <p className="text-sm text-gray-400">Viewer list is hidden.</p>
+            <p className="text-xs text-gray-300 mt-1">Enable "Visible" above to see who viewed your profile. Note: this is mutual — others will also see you in their viewer list.</p>
+          </div>
         ) : viewers.length === 0 ? (
           <p className="text-sm text-gray-400 text-center py-4">No profile viewers yet.</p>
         ) : (

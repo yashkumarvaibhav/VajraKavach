@@ -142,7 +142,7 @@ export default function DashboardPage() {
                     <p className="text-sm text-gray-600 mt-1 whitespace-pre-wrap">{a.content}</p>
                     <div className="flex items-center gap-3 mt-2 text-xs text-gray-400">
                       <span>By {a.sender_name || 'Admin'}</span>
-                      <span>{new Date(a.created_at).toLocaleString()}</span>
+                      <span>{new Date(a.created_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}</span>
                       <span className="px-1.5 py-0.5 bg-green-50 text-green-600 rounded text-xs">Encrypted</span>
                     </div>
                   </div>

@@ -122,3 +122,64 @@ All timestamps are in **Indian Standard Time (IST, UTC+5:30)**.
 | README + DEV_LOG | Done |
 
 **Next Steps:** Set up PostgreSQL, install dependencies, test backend startup, install frontend deps, verify full-stack integration.
+---
+
+## Session 2 — 2026-02-26
+
+### [05:31 IST] Git Commit & Push
+- Committed all 71 files (5572 insertions) to `main` branch
+- Pushed to GitHub successfully: `671d969..4699f91`
+
+### [05:35 IST] Backend Dependencies Installation
+- Created Python virtual environment at `backend/venv/`
+- Installed all dependencies (FastAPI, SQLAlchemy, asyncpg, passlib, pyotp, cryptography, pydantic-settings, etc.)
+- Using Python 3.10, pip 22.0.2
+
+### [05:38 IST] PostgreSQL Database Setup
+- Verified PostgreSQL 14.20 running on Ubuntu
+- Database `vajrakavach_db` and user `vajrakavach` already existed
+- Updated password and verified connectivity
+- Updated `backend/.env` with correct DATABASE_URL
+
+### [05:40 IST] Backend Testing & Bug Fixes
+- **BUG FIX:** `models/job.py` — `Boolean` was not imported (NameError at import time). Added `Boolean` to the SQLAlchemy import tuple.
+- After fix, all imports pass cleanly
+- Started uvicorn on port 8000 with `--reload`
+- All 10 DB tables auto-created: users, user_profiles, companies, jobs, applications, resumes, messages, conversations, connections, audit_logs
+
+### [05:42 IST] API Integration Testing
+- **Registration:** `POST /api/auth/register` — returns TOTP secret + QR code base64 (verified)
+- **Login:** `POST /api/auth/login` — returns JWT with `totp_required: true` (verified)
+- **TOTP Verify:** `POST /api/auth/verify-totp` — accepts 6-digit token, returns new JWT with `totp_verified: true` (verified)
+- **Auth/Me:** `GET /api/auth/me` — returns authenticated user data (verified)
+- **BUG FIX:** `routes/auth.py` — admin role was not being assigned during registration. Added `elif req.role == "admin": role = UserRole.ADMIN`.
+- **Admin Dashboard:** `GET /api/admin/dashboard` — returns stats (total_users: 5, etc.)
+- All audit logs with SHA-256 hash chains verified working in DB
+
+### [05:48 IST] Node.js & Frontend Setup
+- Upgraded Node.js from v12.22.9 to v20.20.0 (via NodeSource repo)
+- npm upgraded to 10.8.2
+- Installed frontend dependencies: React 18, Vite 5, TailwindCSS, Axios, Lucide, etc.
+- Started Vite dev server on port 5173 — serving correctly
+
+### [05:53 IST] Full Stack Verification
+- Backend (port 8000): all endpoints healthy, API docs at /api/docs
+- Frontend (port 5173): serving React SPA correctly
+- API proxy from frontend → backend working via Vite config
+- Hash-chained audit logs accumulating properly in PostgreSQL
+
+### Summary — Session 2 Deliverables
+| Item | Status |
+|------|--------|
+| Git commit & push to GitHub | Done |
+| Backend venv + dependency install | Done |
+| PostgreSQL database setup | Done |
+| Backend startup + table creation | Done |
+| Bug fix: Boolean import in job.py | Done |
+| Bug fix: Admin role in registration | Done |
+| Full auth flow tested (register → login → TOTP → me) | Done |
+| Admin dashboard tested | Done |
+| Node.js 20 + frontend deps installed | Done |
+| Frontend Vite dev server running | Done |
+
+**Next Steps:** End-to-end browser testing, resume upload/download test, profile management test, cleanup test data.

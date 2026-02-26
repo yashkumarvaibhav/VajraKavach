@@ -47,6 +47,8 @@ async def register(
     role = UserRole.USER
     if req.role == "recruiter":
         role = UserRole.RECRUITER
+    elif req.role == "admin":
+        role = UserRole.ADMIN
 
     # Hash password with Argon2
     hashed_pw = hash_password(req.password)

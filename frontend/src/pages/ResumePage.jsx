@@ -22,7 +22,8 @@ export default function ResumePage() {
   const fetchResume = async () => {
     try {
       const res = await api.get('/resumes/my');
-      setResume(res.data);
+      const resumes = res.data || [];
+      setResume(resumes.length > 0 ? resumes[0] : null);
     } catch (err) {
       if (err.response?.status !== 404) console.error('Resume fetch error:', err);
     } finally {
@@ -74,7 +75,7 @@ export default function ResumePage() {
     setDownloading(true);
     setError('');
     try {
-      const res = await api.get(`/resumes/download/${resume.id}?totp_token=${totpToken}`, {
+      const res = await api.get(`/resumes/${resume.id}/download?totp_token=${totpToken}`, {
         responseType: 'blob',
       });
       const url = URL.createObjectURL(res.data);

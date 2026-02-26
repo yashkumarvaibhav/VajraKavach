@@ -14,7 +14,7 @@ from app.models.user import User, UserProfile, UserRole
 from app.schemas.auth import (
     RegisterRequest, LoginRequest, TOTPVerifyRequest,
     TokenResponse, TOTPSetupResponse, RefreshTokenRequest,
-    PasswordChangeRequest, SetupVerifyRequest,
+    PasswordChangeRequest, SetupVerifyRequest, ForgotPasswordRequest,
 )
 from app.schemas.user import UserResponse
 from app.services.auth_service import (
@@ -307,3 +307,43 @@ async def get_me(current_user: User = Depends(get_current_user)):
         totp_verified=current_user.totp_verified,
         created_at=current_user.created_at,
     )
+
+
+@router.post("/forgot-password")
+async def forgot_password(
+    req: ForgotPasswordRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Reset password using email + TOTP verification (no login required)."""
+    result = await db.execute(select(User).where(User.email == req.email))
+    user = result.scalar_one_or_none()
+
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No account found with this email")
+
+    if not user.totp_secret:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="TOTP not configured for this account")
+
+    if not verify_totp(user.totp_secret, req.totp_token):
+        await create_audit_log(
+            db=db,
+            action="user.forgot_password_failed",
+            user_id=str(user.id),
+            details={"email": req.email, "reason": "invalid_totp"},
+            ip_address=request.client.host if request.client else None,
+        )
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid TOTP token")
+
+    user.hashed_password = hash_password(req.new_password)
+
+    await create_audit_log(
+        db=db,
+        action="user.forgot_password_reset",
+        user_id=str(user.id),
+        resource="user",
+        resource_id=str(user.id),
+        ip_address=request.client.host if request.client else None,
+    )
+
+    return {"message": "Password reset successfully. You can now log in with your new password."}

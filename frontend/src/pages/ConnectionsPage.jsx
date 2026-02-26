@@ -1,7 +1,101 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
-import { Users, Search, UserPlus, UserCheck, Clock, Send, Network, X } from 'lucide-react';
+import { Users, Search, UserPlus, UserCheck, Clock, Send, Network, X, Trash2 } from 'lucide-react';
+
+/** Simple force-directed SVG graph for connection visualization */
+function NetworkGraph({ nodes, edges, currentUserId, userName }) {
+  const svgRef = useRef(null);
+  const [positions, setPositions] = useState([]);
+  const [hovered, setHovered] = useState(null);
+
+  useEffect(() => {
+    if (!nodes || nodes.length === 0) return;
+
+    const width = 700, height = 450;
+    const cx = width / 2, cy = height / 2;
+
+    // Place center user at middle, connections in a circle around
+    const allNodes = [
+      { id: currentUserId, name: userName || 'You', isCenter: true },
+      ...nodes.filter(n => n.id !== currentUserId),
+    ];
+
+    const angleStep = (2 * Math.PI) / Math.max(allNodes.length - 1, 1);
+    const radius = Math.min(width, height) * 0.35;
+
+    const pos = allNodes.map((node, i) => {
+      if (node.isCenter || i === 0) {
+        return { ...node, x: cx, y: cy };
+      }
+      const angle = angleStep * (i - 1) - Math.PI / 2;
+      return {
+        ...node,
+        x: cx + radius * Math.cos(angle),
+        y: cy + radius * Math.sin(angle),
+      };
+    });
+
+    setPositions(pos);
+  }, [nodes, currentUserId, userName]);
+
+  if (positions.length === 0) return null;
+
+  const posMap = {};
+  positions.forEach(p => { posMap[p.id] = p; });
+
+  const edgeLines = (edges || []).map((edge, i) => {
+    const from = posMap[edge.from] || posMap[edge.source];
+    const to = posMap[edge.to] || posMap[edge.target];
+    if (!from || !to) return null;
+    return (
+      <line key={i} x1={from.x} y1={from.y} x2={to.x} y2={to.y}
+        stroke="#cbd5e1" strokeWidth="1.5" opacity="0.7" />
+    );
+  }).filter(Boolean);
+
+  // If no edges provided, draw lines from center to all
+  const fallbackEdges = (!edges || edges.length === 0) ? positions.slice(1).map((p, i) => (
+    <line key={`fb-${i}`} x1={positions[0].x} y1={positions[0].y} x2={p.x} y2={p.y}
+      stroke="#cbd5e1" strokeWidth="1.5" opacity="0.6" />
+  )) : [];
+
+  return (
+    <div>
+      <h3 className="text-lg font-semibold text-gray-900 mb-4">Your Network ({nodes.length} connections)</h3>
+      <svg ref={svgRef} viewBox="0 0 700 450" className="w-full border border-gray-100 rounded-lg bg-gradient-to-br from-gray-50 to-white">
+        {edgeLines.length > 0 ? edgeLines : fallbackEdges}
+        {positions.map((node) => (
+          <g key={node.id}
+             onMouseEnter={() => setHovered(node.id)}
+             onMouseLeave={() => setHovered(null)}
+             style={{ cursor: 'pointer' }}>
+            <circle cx={node.x} cy={node.y}
+              r={node.isCenter ? 28 : 22}
+              fill={node.isCenter ? '#4f46e5' : hovered === node.id ? '#6366f1' : '#818cf8'}
+              stroke="white" strokeWidth="3"
+              className="transition-all duration-200"
+            />
+            <text x={node.x} y={node.y + 1} textAnchor="middle" dominantBaseline="central"
+              fill="white" fontSize={node.isCenter ? 14 : 11} fontWeight="bold">
+              {(node.name || '?')[0].toUpperCase()}
+            </text>
+            <text x={node.x} y={node.y + (node.isCenter ? 40 : 34)} textAnchor="middle"
+              fill="#374151" fontSize="11" fontWeight="500">
+              {node.isCenter ? 'You' : (node.name || 'Unknown')}
+            </text>
+            {node.mutual_count > 0 && !node.isCenter && (
+              <text x={node.x} y={node.y + 46} textAnchor="middle"
+                fill="#9ca3af" fontSize="9">
+                {node.mutual_count} mutual
+              </text>
+            )}
+          </g>
+        ))}
+      </svg>
+    </div>
+  );
+}
 
 export default function ConnectionsPage() {
   const { user } = useAuth();
@@ -50,7 +144,7 @@ export default function ConnectionsPage() {
 
   const sendRequest = async (userId) => {
     try {
-      await api.post('/users/connections/request', { addressee_id: userId });
+      await api.post('/users/connections', { addressee_id: userId });
       setSearchResults(prev =>
         prev.map(u => u.id === userId ? { ...u, connection_status: 'pending' } : u)
       );
@@ -62,10 +156,24 @@ export default function ConnectionsPage() {
 
   const respondRequest = async (connId, accept) => {
     try {
-      await api.put(`/users/connections/${connId}`, { status: accept ? 'accepted' : 'rejected' });
+      if (accept) {
+        await api.put(`/users/connections/${connId}/accept`);
+      } else {
+        await api.delete(`/users/connections/${connId}`);
+      }
       fetchAll();
     } catch (err) {
       alert(err.response?.data?.detail || 'Failed to respond');
+    }
+  };
+
+  const removeConnection = async (connId) => {
+    if (!confirm('Remove this connection?')) return;
+    try {
+      await api.delete(`/users/connections/${connId}`);
+      fetchAll();
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Failed to remove connection');
     }
   };
 
@@ -152,7 +260,14 @@ export default function ConnectionsPage() {
                 </div>
               ) : connections.map(conn => {
                 const p = getPartnerInfo(conn);
-                return <PersonCard key={conn.id} name={p.name} headline={p.headline} picture={p.picture} />;
+                return <PersonCard key={conn.id} name={p.name} headline={p.headline} picture={p.picture}
+                  actions={
+                    <button onClick={() => removeConnection(conn.id)}
+                      className="px-3 py-1.5 bg-red-100 text-red-700 text-sm rounded-lg hover:bg-red-200 transition">
+                      Remove
+                    </button>
+                  }
+                />;
               })}
             </div>
           )}
@@ -256,24 +371,13 @@ export default function ConnectionsPage() {
             <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
               {!graph ? (
                 <div className="text-center py-12 text-gray-400">Loading network graph...</div>
-              ) : (
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Your Network ({graph.nodes?.length || 0} people)</h3>
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                    {(graph.nodes || []).map(node => (
-                      <div key={node.id} className="border border-gray-200 rounded-lg p-3 text-center">
-                        <div className="w-10 h-10 rounded-full bg-primary-100 flex items-center justify-center mx-auto mb-2">
-                          <span className="text-primary-600 font-bold">{(node.name || '?')[0].toUpperCase()}</span>
-                        </div>
-                        <p className="text-sm font-medium text-gray-900 truncate">{node.name}</p>
-                        <p className="text-xs text-gray-400">{node.mutual_count || 0} mutual</p>
-                      </div>
-                    ))}
-                  </div>
-                  {(!graph.nodes || graph.nodes.length === 0) && (
-                    <div className="text-center py-8 text-gray-400">No connections in your network yet</div>
-                  )}
+              ) : (!graph.nodes || graph.nodes.length === 0) ? (
+                <div className="text-center py-12 text-gray-400">
+                  <Network className="h-12 w-12 mx-auto mb-3 opacity-30" />
+                  <p>No connections in your network yet</p>
                 </div>
+              ) : (
+                <NetworkGraph nodes={graph.nodes} edges={graph.edges} currentUserId={user?.id} userName={user?.full_name} />
               )}
             </div>
           )}

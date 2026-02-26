@@ -12,12 +12,17 @@ export default function Navbar() {
 
   const baseLink = "px-3 py-2 rounded-lg text-sm font-medium transition-colors";
 
-  const commonLinks = [
-    { to: '/dashboard', label: 'Dashboard' },
-    { to: '/connections', label: 'Connections' },
-    { to: '/messages', label: 'Messages' },
-    { to: '/companies', label: 'Companies' },
-  ];
+  const commonLinks = user?.role === 'admin'
+    ? [
+        { to: '/dashboard', label: 'Dashboard' },
+        { to: '/companies', label: 'Companies' },
+      ]
+    : [
+        { to: '/dashboard', label: 'Dashboard' },
+        { to: '/connections', label: 'Connections' },
+        { to: '/messages', label: 'Messages' },
+        { to: '/companies', label: 'Companies' },
+      ];
 
   const roleLinks = {
     user: [

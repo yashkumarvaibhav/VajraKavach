@@ -1,6 +1,6 @@
 """
 VajraKavach — User & Profile Routes
-Profile CRUD, connections, profile viewing.
+Profile CRUD, connections, profile viewing, connection graph.
 """
 
 import uuid
@@ -8,14 +8,15 @@ import os
 import aiofiles
 from fastapi import APIRouter, Depends, HTTPException, status, Request, UploadFile, File
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, or_, and_
+from sqlalchemy import select, or_, and_, func
 
 from app.database import get_db
-from app.models.user import User, UserProfile
+from app.models.user import User, UserProfile, UserRole
 from app.models.connection import Connection, ConnectionStatus
 from app.schemas.user import (
     UserResponse, UserProfileUpdate, UserProfileResponse,
     ConnectionRequest, ConnectionResponse, UserNameUpdate,
+    UserSearchResponse,
 )
 from app.dependencies import get_current_user
 from app.services.audit_service import create_audit_log
@@ -24,17 +25,71 @@ from app.config import settings
 router = APIRouter(prefix="/api/users", tags=["Users & Profiles"])
 
 
+# ── Helpers ──────────────────────────────────────────────────────────
+
+async def _get_connection_status(db, user_id, other_id):
+    """Get connection status between two users."""
+    result = await db.execute(
+        select(Connection).where(
+            or_(
+                and_(Connection.requester_id == user_id, Connection.addressee_id == other_id),
+                and_(Connection.requester_id == other_id, Connection.addressee_id == user_id),
+            )
+        )
+    )
+    conn = result.scalar_one_or_none()
+    if not conn:
+        return None
+    return conn.status.value
+
+
+async def _enrich_connection(db, conn, current_user_id):
+    """Attach requester/addressee profile info to a connection response."""
+    # Fetch requester info
+    req_user = await db.execute(select(User).where(User.id == conn.requester_id))
+    req = req_user.scalar_one_or_none()
+    req_profile = None
+    if req:
+        rp = await db.execute(select(UserProfile).where(UserProfile.user_id == req.id))
+        req_profile = rp.scalar_one_or_none()
+
+    # Fetch addressee info
+    addr_user = await db.execute(select(User).where(User.id == conn.addressee_id))
+    addr = addr_user.scalar_one_or_none()
+    addr_profile = None
+    if addr:
+        ap = await db.execute(select(UserProfile).where(UserProfile.user_id == addr.id))
+        addr_profile = ap.scalar_one_or_none()
+
+    return ConnectionResponse(
+        id=str(conn.id),
+        requester_id=str(conn.requester_id),
+        addressee_id=str(conn.addressee_id),
+        status=conn.status.value,
+        created_at=conn.created_at,
+        requester_name=req.full_name if req else None,
+        requester_headline=req_profile.headline if req_profile else None,
+        requester_picture=req_profile.profile_picture_url if req_profile else None,
+        addressee_name=addr.full_name if addr else None,
+        addressee_headline=addr_profile.headline if addr_profile else None,
+        addressee_picture=addr_profile.profile_picture_url if addr_profile else None,
+    )
+
+
 # ── User Search ──────────────────────────────────────────────────────
 
-@router.get("/search", response_model=list[UserResponse])
+@router.get("/search", response_model=list[UserSearchResponse])
 async def search_users(
     q: str = "",
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Search users by name or email (for connections/messaging)."""
-    from sqlalchemy import func as sqlfunc
-    query = select(User).where(User.is_active == True, User.id != current_user.id)
+    """Search users by name or email (excludes admins from results)."""
+    query = select(User).where(
+        User.is_active == True,
+        User.id != current_user.id,
+        User.role != UserRole.ADMIN,  # Hide admin users
+    )
     if q:
         query = query.where(
             or_(
@@ -45,18 +100,27 @@ async def search_users(
     query = query.limit(20)
     result = await db.execute(query)
     users = result.scalars().all()
-    return [
-        UserResponse(
+
+    responses = []
+    for u in users:
+        # Get profile info
+        prof_result = await db.execute(select(UserProfile).where(UserProfile.user_id == u.id))
+        prof = prof_result.scalar_one_or_none()
+
+        # Get connection status
+        conn_status = await _get_connection_status(db, current_user.id, u.id)
+
+        responses.append(UserSearchResponse(
             id=str(u.id),
             email=u.email,
             full_name=u.full_name,
             role=u.role.value,
-            is_active=u.is_active,
-            totp_verified=u.totp_verified,
-            created_at=u.created_at,
-        )
-        for u in users
-    ]
+            headline=prof.headline if prof else None,
+            profile_picture_url=prof.profile_picture_url if prof else None,
+            connection_status=conn_status,
+        ))
+
+    return responses
 
 
 # ── User Account ─────────────────────────────────────────────────────
@@ -91,6 +155,7 @@ async def update_my_account(
         full_name=current_user.full_name,
         role=current_user.role.value,
         is_active=current_user.is_active,
+        is_suspended=current_user.is_suspended,
         totp_verified=current_user.totp_verified,
         created_at=current_user.created_at,
     )
@@ -116,7 +181,6 @@ async def upload_profile_picture(
     if len(contents) > MAX_IMAGE_SIZE:
         raise HTTPException(status_code=400, detail="Image must be under 5 MB")
 
-    # Save to uploads/avatars/<user_id>.<ext>
     ext = file.filename.rsplit('.', 1)[-1].lower() if '.' in file.filename else 'jpg'
     avatar_dir = os.path.join(settings.UPLOAD_DIR, "avatars")
     os.makedirs(avatar_dir, exist_ok=True)
@@ -126,7 +190,6 @@ async def upload_profile_picture(
     async with aiofiles.open(filepath, "wb") as f:
         await f.write(contents)
 
-    # Update profile
     result = await db.execute(
         select(UserProfile).where(UserProfile.user_id == current_user.id)
     )
@@ -253,6 +316,10 @@ async def view_user_profile(
     if not profile:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Profile not found")
 
+    # Get the user object for full_name
+    user_result = await db.execute(select(User).where(User.id == user_id))
+    target_user = user_result.scalar_one_or_none()
+
     # Increment view count
     if str(current_user.id) != user_id:
         current_count = profile.view_count if isinstance(profile.view_count, int) else 0
@@ -279,6 +346,8 @@ async def view_user_profile(
     response_data = {
         "id": str(profile.id),
         "user_id": str(profile.user_id),
+        "full_name": target_user.full_name if target_user else None,
+        "email": target_user.email if target_user else None,
         "headline": profile.headline,
         "location": profile.location,
         "bio": profile.bio,
@@ -286,12 +355,11 @@ async def view_user_profile(
         "experience": profile.experience,
         "skills": profile.skills,
         "profile_picture_url": profile.profile_picture_url,
-        "privacy_settings": None,  # don't expose privacy settings to others
+        "privacy_settings": None,
         "view_count": profile.view_count if profile.show_viewers else 0,
         "show_viewers": profile.show_viewers,
     }
 
-    # Filter fields based on privacy
     is_owner = str(current_user.id) == user_id
     is_admin = current_user.role.value == "admin"
     for field, level in privacy.items():
@@ -317,7 +385,6 @@ async def send_connection_request(
     if str(current_user.id) == req.addressee_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot connect to yourself")
 
-    # Check if connection already exists
     existing = await db.execute(
         select(Connection).where(
             or_(
@@ -347,13 +414,7 @@ async def send_connection_request(
         ip_address=request.client.host if request.client else None,
     )
 
-    return ConnectionResponse(
-        id=str(conn.id),
-        requester_id=str(conn.requester_id),
-        addressee_id=str(conn.addressee_id),
-        status=conn.status.value,
-        created_at=conn.created_at,
-    )
+    return await _enrich_connection(db, conn, str(current_user.id))
 
 
 @router.put("/connections/{connection_id}/accept", response_model=ConnectionResponse)
@@ -377,13 +438,7 @@ async def accept_connection(
     conn.status = ConnectionStatus.ACCEPTED
     await db.flush()
 
-    return ConnectionResponse(
-        id=str(conn.id),
-        requester_id=str(conn.requester_id),
-        addressee_id=str(conn.addressee_id),
-        status=conn.status.value,
-        created_at=conn.created_at,
-    )
+    return await _enrich_connection(db, conn, str(current_user.id))
 
 
 @router.delete("/connections/{connection_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -414,7 +469,7 @@ async def list_connections(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """List all connections for the current user."""
+    """List all accepted connections for the current user."""
     result = await db.execute(
         select(Connection).where(
             and_(
@@ -427,17 +482,7 @@ async def list_connections(
         )
     )
     connections = result.scalars().all()
-
-    return [
-        ConnectionResponse(
-            id=str(c.id),
-            requester_id=str(c.requester_id),
-            addressee_id=str(c.addressee_id),
-            status=c.status.value,
-            created_at=c.created_at,
-        )
-        for c in connections
-    ]
+    return [await _enrich_connection(db, c, str(current_user.id)) for c in connections]
 
 
 @router.get("/connections/pending", response_model=list[ConnectionResponse])
@@ -445,7 +490,7 @@ async def list_pending_requests(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """List pending connection requests for the current user."""
+    """List pending connection requests RECEIVED by the current user."""
     result = await db.execute(
         select(Connection).where(
             Connection.addressee_id == current_user.id,
@@ -453,14 +498,79 @@ async def list_pending_requests(
         )
     )
     connections = result.scalars().all()
+    return [await _enrich_connection(db, c, str(current_user.id)) for c in connections]
 
-    return [
-        ConnectionResponse(
-            id=str(c.id),
-            requester_id=str(c.requester_id),
-            addressee_id=str(c.addressee_id),
-            status=c.status.value,
-            created_at=c.created_at,
+
+@router.get("/connections/sent", response_model=list[ConnectionResponse])
+async def list_sent_requests(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """List pending connection requests SENT by the current user."""
+    result = await db.execute(
+        select(Connection).where(
+            Connection.requester_id == current_user.id,
+            Connection.status == ConnectionStatus.PENDING,
         )
-        for c in connections
-    ]
+    )
+    connections = result.scalars().all()
+    return [await _enrich_connection(db, c, str(current_user.id)) for c in connections]
+
+
+@router.get("/connections/graph")
+async def connection_graph(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Get a limited connection graph restricted to user's connections.
+    Returns nodes (connected users) and edges (connections between them)."""
+    # Get all my connections
+    result = await db.execute(
+        select(Connection).where(
+            and_(
+                Connection.status == ConnectionStatus.ACCEPTED,
+                or_(
+                    Connection.requester_id == current_user.id,
+                    Connection.addressee_id == current_user.id,
+                ),
+            )
+        )
+    )
+    my_connections = result.scalars().all()
+
+    # Collect connected user IDs
+    connected_ids = set()
+    for c in my_connections:
+        other_id = str(c.addressee_id) if str(c.requester_id) == str(current_user.id) else str(c.requester_id)
+        connected_ids.add(other_id)
+
+    # Build nodes
+    nodes = [{"id": str(current_user.id), "name": current_user.full_name, "role": current_user.role.value, "is_self": True}]
+    for uid in connected_ids:
+        u_result = await db.execute(select(User).where(User.id == uid))
+        u = u_result.scalar_one_or_none()
+        if u:
+            nodes.append({"id": str(u.id), "name": u.full_name, "role": u.role.value, "is_self": False})
+
+    # Build edges: connections between me and my connections
+    edges = []
+    for c in my_connections:
+        edges.append({"from": str(c.requester_id), "to": str(c.addressee_id)})
+
+    # Also find connections BETWEEN my connections (mutual connections)
+    if connected_ids:
+        from sqlalchemy import cast
+        mutual_result = await db.execute(
+            select(Connection).where(
+                and_(
+                    Connection.status == ConnectionStatus.ACCEPTED,
+                    Connection.requester_id.in_(connected_ids),
+                    Connection.addressee_id.in_(connected_ids),
+                )
+            )
+        )
+        mutual = mutual_result.scalars().all()
+        for c in mutual:
+            edges.append({"from": str(c.requester_id), "to": str(c.addressee_id)})
+
+    return {"nodes": nodes, "edges": edges}

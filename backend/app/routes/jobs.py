@@ -1,23 +1,46 @@
 """
 VajraKavach — Job Routes
-Job posting CRUD and search.
+Job posting CRUD, search, and recruiter management.
 """
 
 import uuid
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, or_, and_
+from sqlalchemy import select, or_, and_, func
 from typing import Optional, List
 
 from app.database import get_db
 from app.models.job import Job
 from app.models.company import Company
 from app.models.user import User
+from app.models.application import Application
 from app.schemas.job import JobCreate, JobUpdate, JobResponse
 from app.dependencies import get_current_user, require_role
 from app.services.audit_service import create_audit_log
 
 router = APIRouter(prefix="/api/jobs", tags=["Jobs"])
+
+
+def _job_response(job, company_name=None, applicant_count=None):
+    """Build a standard JobResponse from a Job ORM object."""
+    return JobResponse(
+        id=str(job.id),
+        company_id=str(job.company_id),
+        company_name=company_name,
+        title=job.title,
+        description=job.description,
+        required_skills=job.required_skills,
+        location=job.location,
+        location_type=job.location_type.value if hasattr(job.location_type, 'value') else job.location_type,
+        job_type=job.job_type.value if hasattr(job.job_type, 'value') else job.job_type,
+        salary_min=job.salary_min,
+        salary_max=job.salary_max,
+        salary_currency=getattr(job, 'salary_currency', None) or "INR",
+        application_deadline=job.application_deadline,
+        is_active=job.is_active,
+        created_at=job.created_at,
+        applicant_count=applicant_count,
+    )
 
 
 @router.post("/", response_model=JobResponse, status_code=status.HTTP_201_CREATED)
@@ -28,7 +51,6 @@ async def create_job(
     current_user: User = Depends(require_role("recruiter", "admin")),
 ):
     """Post a new job listing."""
-    # Verify company ownership
     result = await db.execute(select(Company).where(Company.id == req.company_id))
     company = result.scalar_one_or_none()
     if not company:
@@ -48,6 +70,7 @@ async def create_job(
         job_type=req.job_type,
         salary_min=req.salary_min,
         salary_max=req.salary_max,
+        salary_currency=req.salary_currency,
         application_deadline=req.application_deadline,
     )
     db.add(job)
@@ -63,21 +86,47 @@ async def create_job(
         ip_address=request.client.host if request.client else None,
     )
 
-    return JobResponse(
-        id=str(job.id),
-        company_id=str(job.company_id),
-        title=job.title,
-        description=job.description,
-        required_skills=job.required_skills,
-        location=job.location,
-        location_type=job.location_type.value if hasattr(job.location_type, 'value') else job.location_type,
-        job_type=job.job_type.value if hasattr(job.job_type, 'value') else job.job_type,
-        salary_min=job.salary_min,
-        salary_max=job.salary_max,
-        application_deadline=job.application_deadline,
-        is_active=job.is_active,
-        created_at=job.created_at,
+    return _job_response(job, company_name=company.name)
+
+
+@router.get("/my", response_model=list[JobResponse])
+async def my_jobs(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role("recruiter", "admin")),
+):
+    """List jobs posted by the current recruiter (with applicant counts)."""
+    # Get companies owned by this recruiter
+    comp_result = await db.execute(
+        select(Company).where(Company.admin_id == current_user.id)
     )
+    companies = comp_result.scalars().all()
+    if not companies:
+        return []
+
+    company_map = {str(c.id): c.name for c in companies}
+    company_ids = [c.id for c in companies]
+
+    # Get all jobs for those companies
+    job_result = await db.execute(
+        select(Job).where(Job.company_id.in_(company_ids)).order_by(Job.created_at.desc())
+    )
+    jobs = job_result.scalars().all()
+
+    responses = []
+    for job in jobs:
+        # Count applicants
+        count_result = await db.execute(
+            select(func.count(Application.id)).where(Application.job_id == job.id)
+        )
+        app_count = count_result.scalar() or 0
+
+        responses.append(_job_response(
+            job,
+            company_name=company_map.get(str(job.company_id)),
+            applicant_count=app_count,
+        ))
+
+    return responses
 
 
 @router.get("/search", response_model=list[JobResponse])
@@ -116,32 +165,13 @@ async def search_jobs(
     if job_type:
         query = query.where(Job.job_type == job_type)
 
-    # Pagination
     offset = (page - 1) * page_size
     query = query.order_by(Job.created_at.desc()).offset(offset).limit(page_size)
 
     result = await db.execute(query)
     rows = result.all()
 
-    return [
-        JobResponse(
-            id=str(j.id),
-            company_id=str(j.company_id),
-            company_name=company_name,
-            title=j.title,
-            description=j.description,
-            required_skills=j.required_skills,
-            location=j.location,
-            location_type=j.location_type.value if hasattr(j.location_type, 'value') else j.location_type,
-            job_type=j.job_type.value if hasattr(j.job_type, 'value') else j.job_type,
-            salary_min=j.salary_min,
-            salary_max=j.salary_max,
-            application_deadline=j.application_deadline,
-            is_active=j.is_active,
-            created_at=j.created_at,
-        )
-        for j, company_name in rows
-    ]
+    return [_job_response(j, company_name=cn) for j, cn in rows]
 
 
 @router.get("/{job_id}", response_model=JobResponse)
@@ -156,21 +186,11 @@ async def get_job(
     if not job:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
 
-    return JobResponse(
-        id=str(job.id),
-        company_id=str(job.company_id),
-        title=job.title,
-        description=job.description,
-        required_skills=job.required_skills,
-        location=job.location,
-        location_type=job.location_type.value if hasattr(job.location_type, 'value') else job.location_type,
-        job_type=job.job_type.value if hasattr(job.job_type, 'value') else job.job_type,
-        salary_min=job.salary_min,
-        salary_max=job.salary_max,
-        application_deadline=job.application_deadline,
-        is_active=job.is_active,
-        created_at=job.created_at,
-    )
+    # Get company name
+    comp_result = await db.execute(select(Company.name).where(Company.id == job.company_id))
+    comp_name = comp_result.scalar_one_or_none()
+
+    return _job_response(job, company_name=comp_name)
 
 
 @router.put("/{job_id}", response_model=JobResponse)
@@ -187,7 +207,6 @@ async def update_job(
     if not job:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
 
-    # Verify ownership through company
     company_result = await db.execute(select(Company).where(Company.id == job.company_id))
     company = company_result.scalar_one_or_none()
     if str(company.admin_id) != str(current_user.id) and current_user.role.value != "admin":
@@ -209,21 +228,7 @@ async def update_job(
         ip_address=request.client.host if request.client else None,
     )
 
-    return JobResponse(
-        id=str(job.id),
-        company_id=str(job.company_id),
-        title=job.title,
-        description=job.description,
-        required_skills=job.required_skills,
-        location=job.location,
-        location_type=job.location_type.value if hasattr(job.location_type, 'value') else job.location_type,
-        job_type=job.job_type.value if hasattr(job.job_type, 'value') else job.job_type,
-        salary_min=job.salary_min,
-        salary_max=job.salary_max,
-        application_deadline=job.application_deadline,
-        is_active=job.is_active,
-        created_at=job.created_at,
-    )
+    return _job_response(job, company_name=company.name)
 
 
 @router.delete("/{job_id}", status_code=status.HTTP_204_NO_CONTENT)

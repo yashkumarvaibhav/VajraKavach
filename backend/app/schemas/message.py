@@ -8,10 +8,10 @@ from datetime import datetime
 
 
 class MessageSend(BaseModel):
-    conversation_id: Optional[str] = None       # None = create new conversation
+    conversation_id: Optional[str] = None
     recipient_id: str
-    ciphertext: str                              # client-side encrypted content
-    signature: Optional[str] = None              # PKI digital signature
+    ciphertext: str = Field(..., max_length=100000)
+    signature: Optional[str] = None
 
 
 class MessageResponse(BaseModel):
@@ -32,6 +32,8 @@ class ConversationResponse(BaseModel):
     id: str
     name: Optional[str] = None
     is_group: bool
+    partner_id: Optional[str] = None
+    partner_name: Optional[str] = None
     created_at: datetime
 
     class Config:

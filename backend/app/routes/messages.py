@@ -7,7 +7,7 @@ Server stores ONLY ciphertext.
 import uuid
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, or_
+from sqlalchemy import select, or_, and_
 
 from app.database import get_db
 from app.models.message import Message, Conversation
@@ -17,6 +17,23 @@ from app.dependencies import get_current_user
 from app.services.audit_service import create_audit_log
 
 router = APIRouter(prefix="/api/messages", tags=["Messaging"])
+
+
+async def _find_existing_conversation(db: AsyncSession, user_a_id, user_b_id):
+    """Find an existing 1-to-1 conversation between two users."""
+    result = await db.execute(
+        select(Conversation)
+        .join(Message, Message.conversation_id == Conversation.id)
+        .where(
+            Conversation.is_group == False,
+            or_(
+                and_(Message.sender_id == user_a_id, Message.recipient_id == user_b_id),
+                and_(Message.sender_id == user_b_id, Message.recipient_id == user_a_id),
+            ),
+        )
+        .limit(1)
+    )
+    return result.scalar_one_or_none()
 
 
 @router.post("/", response_model=MessageResponse, status_code=status.HTTP_201_CREATED)
@@ -30,18 +47,25 @@ async def send_message(
     Send an encrypted message.
     Client encrypts the message with recipient's public key before sending.
     Server stores only ciphertext.
+    If no conversation_id is provided, finds or creates a 1-to-1 conversation.
     """
     conversation_id = req.conversation_id
 
     if not conversation_id:
-        # Create a new 1-to-1 conversation
-        conversation = Conversation(
-            id=uuid.uuid4(),
-            is_group=False,
+        # Try to find an existing conversation between these two users
+        existing = await _find_existing_conversation(
+            db, str(current_user.id), req.recipient_id
         )
-        db.add(conversation)
-        await db.flush()
-        conversation_id = str(conversation.id)
+        if existing:
+            conversation_id = str(existing.id)
+        else:
+            conversation = Conversation(
+                id=uuid.uuid4(),
+                is_group=False,
+            )
+            db.add(conversation)
+            await db.flush()
+            conversation_id = str(conversation.id)
 
     message = Message(
         id=uuid.uuid4(),
@@ -82,7 +106,7 @@ async def list_conversations(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """List conversations where the current user has messages."""
+    """List conversations where the current user has messages, with partner info."""
     result = await db.execute(
         select(Conversation)
         .join(Message, Message.conversation_id == Conversation.id)
@@ -96,15 +120,40 @@ async def list_conversations(
     )
     conversations = result.scalars().all()
 
-    return [
-        ConversationResponse(
+    responses = []
+    for c in conversations:
+        partner_id = None
+        partner_name = None
+
+        if not c.is_group:
+            # Find the other user in this conversation
+            msg_result = await db.execute(
+                select(Message).where(Message.conversation_id == c.id).limit(1)
+            )
+            sample_msg = msg_result.scalar_one_or_none()
+            if sample_msg:
+                if str(sample_msg.sender_id) == str(current_user.id):
+                    other_id = str(sample_msg.recipient_id) if sample_msg.recipient_id else None
+                else:
+                    other_id = str(sample_msg.sender_id)
+
+                if other_id:
+                    partner_id = other_id
+                    user_result = await db.execute(select(User).where(User.id == other_id))
+                    partner_user = user_result.scalar_one_or_none()
+                    if partner_user:
+                        partner_name = partner_user.full_name
+
+        responses.append(ConversationResponse(
             id=str(c.id),
-            name=c.name,
+            name=c.name or partner_name,
             is_group=c.is_group,
+            partner_id=partner_id,
+            partner_name=partner_name,
             created_at=c.created_at,
-        )
-        for c in conversations
-    ]
+        ))
+
+    return responses
 
 
 @router.get("/conversations/{conversation_id}", response_model=list[MessageResponse])
@@ -114,7 +163,6 @@ async def get_conversation_messages(
     current_user: User = Depends(get_current_user),
 ):
     """Get all messages in a conversation (returns ciphertext — client decrypts)."""
-    # Verify user is part of this conversation
     result = await db.execute(
         select(Message).where(
             Message.conversation_id == conversation_id,
@@ -128,7 +176,6 @@ async def get_conversation_messages(
     if not check:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not part of this conversation")
 
-    # Fetch all messages
     result = await db.execute(
         select(Message)
         .where(Message.conversation_id == conversation_id)

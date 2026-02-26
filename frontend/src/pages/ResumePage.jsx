@@ -1,161 +1,205 @@
 import { useState, useEffect } from 'react';
+import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
-import { FileText, Upload, Download, Trash2, CheckCircle, Shield } from 'lucide-react';
+import VirtualKeyboard from '../components/VirtualKeyboard';
+import { FileText, Upload, Download, Trash2, Shield, X, CheckCircle } from 'lucide-react';
 
 export default function ResumePage() {
-  const [resumes, setResumes] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const { user } = useAuth();
+  const [resume, setResume] = useState(null);
   const [uploading, setUploading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [showTotpModal, setShowTotpModal] = useState(false);
+  const [totpToken, setTotpToken] = useState('');
+  const [downloading, setDownloading] = useState(false);
 
   useEffect(() => {
-    fetchResumes();
+    fetchResume();
   }, []);
 
-  const fetchResumes = async () => {
+  const fetchResume = async () => {
     try {
       const res = await api.get('/resumes/my');
-      setResumes(res.data);
+      setResume(res.data);
     } catch (err) {
-      setError('Failed to load resumes');
+      if (err.response?.status !== 404) console.error('Resume fetch error:', err);
     } finally {
       setLoading(false);
     }
   };
 
-  const handleUpload = async (e) => {
-    const file = e.target.files[0];
+  const uploadResume = async (e) => {
+    const file = e.target.files?.[0];
     if (!file) return;
 
-    const formData = new FormData();
-    formData.append('file', file);
+    if (file.size > 5 * 1024 * 1024) {
+      setError('File too large. Max 5MB.');
+      return;
+    }
+
+    const allowed = ['application/pdf', 'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+    if (!allowed.includes(file.type)) {
+      setError('Only PDF and DOC/DOCX files are allowed.');
+      return;
+    }
 
     setUploading(true);
-    setMessage('');
     setError('');
-
     try {
+      const formData = new FormData();
+      formData.append('file', file);
       await api.post('/resumes/upload', formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
-      setMessage('Resume uploaded and encrypted successfully!');
-      fetchResumes();
+      setMessage('Resume uploaded successfully!');
+      fetchResume();
+      setTimeout(() => setMessage(''), 3000);
     } catch (err) {
-      setError(err.response?.data?.detail || 'Failed to upload resume');
+      setError(err.response?.data?.detail || 'Upload failed');
     } finally {
       setUploading(false);
     }
   };
 
-  const handleDownload = async (resumeId, filename) => {
+  const handleDownloadClick = () => {
+    setShowTotpModal(true);
+    setTotpToken('');
+    setError('');
+  };
+
+  const downloadResume = async () => {
+    setDownloading(true);
+    setError('');
     try {
-      const res = await api.get(`/resumes/${resumeId}/download`, {
+      const res = await api.get(`/resumes/download/${resume.id}?totp_token=${totpToken}`, {
         responseType: 'blob',
       });
-      const url = window.URL.createObjectURL(new Blob([res.data]));
-      const link = document.createElement('a');
-      link.href = url;
-      link.setAttribute('download', filename);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
+      const url = URL.createObjectURL(res.data);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = resume.original_filename || 'resume';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      setShowTotpModal(false);
+      setMessage('Resume downloaded!');
+      setTimeout(() => setMessage(''), 3000);
     } catch (err) {
-      setError('Failed to download resume');
-    }
-  };
-
-  const handleVerify = async (resumeId) => {
-    try {
-      const res = await api.get(`/resumes/${resumeId}/verify-integrity`);
-      if (res.data.verified) {
-        setMessage(`Resume integrity verified! Hash: ${res.data.file_hash.substring(0, 16)}...`);
+      if (err.response?.status === 401 || err.response?.status === 403) {
+        setError('Invalid TOTP code. Please try again.');
+        setTotpToken('');
       } else {
-        setError(res.data.message);
+        setError(err.response?.data?.detail || 'Download failed');
       }
-    } catch (err) {
-      setError('Failed to verify resume integrity');
+    } finally {
+      setDownloading(false);
     }
   };
 
-  const handleDelete = async (resumeId) => {
-    if (!confirm('Are you sure you want to delete this resume?')) return;
+  const deleteResume = async () => {
+    if (!confirm('Are you sure you want to delete your resume?')) return;
     try {
-      await api.delete(`/resumes/${resumeId}`);
-      setMessage('Resume deleted');
-      fetchResumes();
+      await api.delete(`/resumes/${resume.id}`);
+      setResume(null);
+      setMessage('Resume deleted.');
+      setTimeout(() => setMessage(''), 3000);
     } catch (err) {
-      setError('Failed to delete resume');
+      setError(err.response?.data?.detail || 'Delete failed');
     }
   };
-
-  if (loading) return <div className="flex justify-center py-20"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div></div>;
 
   return (
-    <div className="max-w-4xl mx-auto px-4 py-8">
-      <div className="flex items-center justify-between mb-8">
-        <div className="flex items-center space-x-3">
-          <FileText className="h-8 w-8 text-primary-600" />
-          <h1 className="text-3xl font-bold text-gray-900">My Resumes</h1>
-        </div>
-
-        <label className="flex items-center space-x-2 bg-primary-600 text-white px-5 py-2.5 rounded-lg font-medium hover:bg-primary-700 transition cursor-pointer">
-          <Upload className="h-4 w-4" />
-          <span>{uploading ? 'Uploading...' : 'Upload Resume'}</span>
-          <input type="file" accept=".pdf,.docx" onChange={handleUpload} className="hidden" disabled={uploading} />
-        </label>
+    <div className="max-w-2xl mx-auto px-4 py-8">
+      <div className="flex items-center space-x-3 mb-6">
+        <FileText className="h-8 w-8 text-primary-600" />
+        <h1 className="text-3xl font-bold text-gray-900">Resume</h1>
       </div>
 
-      {message && <div className="bg-green-50 text-green-700 p-3 rounded-lg mb-4 text-sm">{message}</div>}
-      {error && <div className="bg-red-50 text-red-700 p-3 rounded-lg mb-4 text-sm">{error}</div>}
-
-      <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-6 text-sm text-yellow-800">
-        <Shield className="inline h-4 w-4 mr-1" />
-        All resumes are encrypted at rest using AES-128 (Fernet). Digital signatures verify integrity via PKI.
+      {/* Security Banner */}
+      <div className="bg-gradient-to-r from-primary-600 to-primary-700 rounded-xl p-4 mb-6 text-white flex items-center gap-3">
+        <Shield className="h-6 w-6 flex-shrink-0" />
+        <div>
+          <p className="font-medium text-sm">End-to-End Encrypted Storage</p>
+          <p className="text-xs text-primary-200">Your resume is encrypted with AES-256 and requires TOTP verification to download</p>
+        </div>
       </div>
 
-      {resumes.length === 0 ? (
-        <div className="text-center py-16 bg-white rounded-xl border border-gray-100">
-          <FileText className="h-16 w-16 text-gray-300 mx-auto mb-4" />
-          <p className="text-gray-500">No resumes uploaded yet</p>
-          <p className="text-gray-400 text-sm mt-1">Upload a PDF or DOCX file to get started</p>
-        </div>
-      ) : (
-        <div className="space-y-4">
-          {resumes.map((resume) => (
-            <div key={resume.id} className="bg-white rounded-xl shadow-sm border border-gray-100 p-5 flex items-center justify-between">
-              <div className="flex items-center space-x-4">
-                <div className="bg-primary-50 p-3 rounded-lg">
-                  <FileText className="h-6 w-6 text-primary-600" />
-                </div>
-                <div>
-                  <h3 className="font-medium text-gray-900">{resume.original_filename}</h3>
-                  <div className="flex items-center space-x-3 mt-1 text-xs text-gray-500">
-                    <span>{resume.file_size ? `${(parseInt(resume.file_size) / 1024).toFixed(1)} KB` : ''}</span>
-                    <span>{resume.mime_type}</span>
-                    <span>{new Date(resume.uploaded_at).toLocaleDateString()}</span>
-                    {resume.has_signature && (
-                      <span className="flex items-center text-green-600">
-                        <CheckCircle className="h-3 w-3 mr-1" />
-                        PKI Signed
-                      </span>
-                    )}
-                  </div>
-                </div>
+      {message && <div className="bg-green-50 text-green-700 p-3 rounded-lg mb-4 text-sm flex items-center gap-2"><CheckCircle className="h-4 w-4" />{message}</div>}
+      {error && !showTotpModal && <div className="bg-red-50 text-red-700 p-3 rounded-lg mb-4 text-sm">{error}</div>}
+
+      {loading ? (
+        <div className="text-center py-12 text-gray-400">Loading...</div>
+      ) : resume ? (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+          <div className="flex items-start justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-lg bg-primary-50 flex items-center justify-center">
+                <FileText className="h-6 w-6 text-primary-600" />
               </div>
-              <div className="flex items-center space-x-2">
-                <button onClick={() => handleVerify(resume.id)} className="p-2 text-indigo-600 hover:bg-indigo-50 rounded-lg transition" title="Verify integrity">
-                  <Shield className="h-4 w-4" />
-                </button>
-                <button onClick={() => handleDownload(resume.id, resume.original_filename)} className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition" title="Download">
-                  <Download className="h-4 w-4" />
-                </button>
-                <button onClick={() => handleDelete(resume.id)} className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition" title="Delete">
-                  <Trash2 className="h-4 w-4" />
-                </button>
+              <div>
+                <p className="font-semibold text-gray-900">{resume.original_filename}</p>
+                <p className="text-xs text-gray-400">
+                  Uploaded {new Date(resume.uploaded_at || resume.created_at).toLocaleDateString()}
+                  {resume.file_size && ` • ${(resume.file_size / 1024).toFixed(0)} KB`}
+                </p>
               </div>
             </div>
-          ))}
+          </div>
+
+          <div className="flex gap-3 mt-6">
+            <button onClick={handleDownloadClick}
+              className="flex items-center gap-1.5 px-4 py-2 bg-primary-600 text-white text-sm rounded-lg hover:bg-primary-700 transition">
+              <Download className="h-4 w-4" /> Download (TOTP Required)
+            </button>
+            <button onClick={deleteResume}
+              className="flex items-center gap-1.5 px-4 py-2 bg-red-100 text-red-700 text-sm rounded-lg hover:bg-red-200 transition">
+              <Trash2 className="h-4 w-4" /> Delete
+            </button>
+          </div>
+
+          {/* Upload New */}
+          <div className="mt-6 pt-6 border-t border-gray-100">
+            <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer hover:text-primary-600 transition">
+              <Upload className="h-4 w-4" /> Replace with new resume
+              <input type="file" className="hidden" onChange={uploadResume} accept=".pdf,.doc,.docx" disabled={uploading} />
+            </label>
+          </div>
+        </div>
+      ) : (
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-8 text-center">
+          <FileText className="h-12 w-12 text-gray-300 mx-auto mb-4" />
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">No Resume Uploaded</h3>
+          <p className="text-sm text-gray-500 mb-6">Upload your resume to apply for jobs. It will be encrypted and stored securely.</p>
+          <label className="inline-flex items-center gap-2 px-6 py-3 bg-primary-600 text-white rounded-lg cursor-pointer hover:bg-primary-700 transition">
+            <Upload className="h-5 w-5" />
+            {uploading ? 'Uploading...' : 'Upload Resume'}
+            <input type="file" className="hidden" onChange={uploadResume} accept=".pdf,.doc,.docx" disabled={uploading} />
+          </label>
+          <p className="text-xs text-gray-400 mt-3">PDF, DOC, or DOCX • Max 5MB</p>
+        </div>
+      )}
+
+      {/* TOTP Verification Modal */}
+      {showTotpModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6 text-center">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-900">TOTP Verification Required</h3>
+              <button onClick={() => { setShowTotpModal(false); setError(''); }}
+                className="p-1 hover:bg-gray-100 rounded-lg"><X className="h-5 w-5" /></button>
+            </div>
+            <p className="text-sm text-gray-500 mb-4">Enter your 6-digit authenticator code to download your resume</p>
+            {error && <div className="bg-red-50 text-red-700 p-3 rounded-lg mb-4 text-sm">{error}</div>}
+            <VirtualKeyboard value={totpToken} onChange={setTotpToken} maxLength={6} />
+            <button onClick={downloadResume} disabled={totpToken.length !== 6 || downloading}
+              className="w-full mt-4 bg-primary-600 text-white py-2.5 rounded-lg font-medium hover:bg-primary-700 transition disabled:opacity-50">
+              {downloading ? 'Downloading...' : 'Verify & Download'}
+            </button>
+          </div>
         </div>
       )}
     </div>

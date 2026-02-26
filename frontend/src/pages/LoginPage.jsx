@@ -20,7 +20,7 @@ export default function LoginPage() {
     try {
       const result = await login(email, password);
       if (result.totpRequired) {
-        navigate('/verify-totp');
+        navigate('/verify-totp', { state: { totpSetupData: result.totpSetupData } });
       } else {
         navigate('/dashboard');
       }

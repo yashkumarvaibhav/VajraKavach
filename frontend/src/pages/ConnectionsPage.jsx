@@ -1,260 +1,280 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
-import { Users, UserPlus, UserCheck, UserX, Search, Clock, CheckCircle, XCircle } from 'lucide-react';
+import { Users, Search, UserPlus, UserCheck, Clock, Send, Network, X } from 'lucide-react';
 
 export default function ConnectionsPage() {
   const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState('connections');
+  const [tab, setTab] = useState('connections');
   const [connections, setConnections] = useState([]);
-  const [pendingRequests, setPendingRequests] = useState([]);
-  const [searchResults, setSearchResults] = useState([]);
+  const [pending, setPending] = useState([]);
+  const [sent, setSent] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [searching, setSearching] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [message, setMessage] = useState('');
-  const [userCache, setUserCache] = useState({});
+  const [graph, setGraph] = useState(null);
 
-  useEffect(() => {
-    fetchData();
-  }, []);
-
-  const fetchData = async () => {
+  const fetchAll = useCallback(async () => {
     setLoading(true);
     try {
-      const [connRes, pendingRes] = await Promise.all([
+      const [connRes, pendRes, sentRes] = await Promise.all([
         api.get('/users/connections'),
         api.get('/users/connections/pending'),
+        api.get('/users/connections/sent'),
       ]);
-      setConnections(connRes.data);
-      setPendingRequests(pendingRes.data);
-
-      // Fetch user details for all connection IDs
-      const userIds = new Set();
-      connRes.data.forEach(c => {
-        userIds.add(c.requester_id);
-        userIds.add(c.addressee_id);
-      });
-      pendingRes.data.forEach(c => {
-        userIds.add(c.requester_id);
-      });
-      userIds.delete(user.id);
-
-      const userDetails = {};
-      await Promise.all(
-        Array.from(userIds).map(async (uid) => {
-          try {
-            const res = await api.get(`/users/${uid}/profile`);
-            userDetails[uid] = res.data;
-          } catch (_) {
-            userDetails[uid] = { full_name: 'Unknown User', email: '' };
-          }
-        })
-      );
-      setUserCache(prev => ({ ...prev, ...userDetails }));
+      setConnections((connRes.data || []).filter(c => c.status === 'accepted'));
+      setPending(pendRes.data || []);
+      setSent(sentRes.data || []);
     } catch (err) {
-      setError('Failed to load connections');
+      console.error('Fetch error:', err);
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  const handleSearch = async (e) => {
-    e?.preventDefault();
+  useEffect(() => { fetchAll(); }, [fetchAll]);
+
+  const handleSearch = async () => {
     if (!searchQuery.trim()) return;
+    setSearching(true);
     try {
       const res = await api.get(`/users/search?q=${encodeURIComponent(searchQuery)}`);
-      setSearchResults(res.data);
+      setSearchResults(res.data || []);
     } catch (err) {
-      setError('Search failed');
+      console.error('Search error:', err);
+    } finally {
+      setSearching(false);
     }
   };
 
-  const sendRequest = async (addresseeId) => {
+  const sendRequest = async (userId) => {
     try {
-      await api.post('/users/connections', { addressee_id: addresseeId });
-      setMessage('Connection request sent!');
-      fetchData();
-      setTimeout(() => setMessage(''), 3000);
+      await api.post('/users/connections/request', { addressee_id: userId });
+      setSearchResults(prev =>
+        prev.map(u => u.id === userId ? { ...u, connection_status: 'pending' } : u)
+      );
+      fetchAll();
     } catch (err) {
-      setError(err.response?.data?.detail || 'Failed to send request');
-      setTimeout(() => setError(''), 3000);
+      alert(err.response?.data?.detail || 'Failed to send request');
     }
   };
 
-  const acceptRequest = async (connectionId) => {
+  const respondRequest = async (connId, accept) => {
     try {
-      await api.put(`/users/connections/${connectionId}/accept`);
-      setMessage('Connection accepted!');
-      fetchData();
-      setTimeout(() => setMessage(''), 3000);
+      await api.put(`/users/connections/${connId}`, { status: accept ? 'accepted' : 'rejected' });
+      fetchAll();
     } catch (err) {
-      setError(err.response?.data?.detail || 'Failed to accept');
-      setTimeout(() => setError(''), 3000);
+      alert(err.response?.data?.detail || 'Failed to respond');
     }
   };
 
-  const removeConnection = async (connectionId) => {
+  const fetchGraph = async () => {
     try {
-      await api.delete(`/users/connections/${connectionId}`);
-      setMessage('Connection removed');
-      fetchData();
-      setTimeout(() => setMessage(''), 3000);
+      const res = await api.get('/users/connections/graph');
+      setGraph(res.data);
     } catch (err) {
-      setError(err.response?.data?.detail || 'Failed to remove');
-      setTimeout(() => setError(''), 3000);
+      console.error('Graph error:', err);
     }
   };
 
-  const getOtherUser = (conn) => {
-    const otherId = conn.requester_id === user.id ? conn.addressee_id : conn.requester_id;
-    return userCache[otherId] || { full_name: 'Loading...', email: '' };
+  useEffect(() => {
+    if (tab === 'graph' && !graph) fetchGraph();
+  }, [tab]);
+
+  const getPartnerInfo = (conn) => {
+    const isRequester = conn.requester_id === user?.id;
+    return {
+      id: isRequester ? conn.addressee_id : conn.requester_id,
+      name: isRequester ? conn.addressee_name : conn.requester_name,
+      headline: isRequester ? conn.addressee_headline : conn.requester_headline,
+      picture: isRequester ? conn.addressee_picture : conn.requester_picture,
+    };
   };
 
-  const tabs = [
-    { id: 'connections', label: 'My Connections', count: connections.length },
-    { id: 'pending', label: 'Pending Requests', count: pendingRequests.length },
-    { id: 'find', label: 'Find People' },
+  const PersonCard = ({ name, headline, picture, actions }) => (
+    <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 flex items-center space-x-4">
+      <div className="w-12 h-12 rounded-full bg-primary-100 flex items-center justify-center overflow-hidden flex-shrink-0">
+        {picture ? (
+          <img src={picture} alt="" className="w-12 h-12 rounded-full object-cover" />
+        ) : (
+          <span className="text-primary-600 font-bold text-lg">{(name || '?')[0].toUpperCase()}</span>
+        )}
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="font-semibold text-gray-900 truncate">{name || 'Unknown User'}</p>
+        {headline && <p className="text-sm text-gray-500 truncate">{headline}</p>}
+      </div>
+      {actions && <div className="flex items-center gap-2 flex-shrink-0">{actions}</div>}
+    </div>
+  );
+
+  const tabDefs = [
+    { key: 'connections', label: 'Connections', icon: UserCheck, count: connections.length },
+    { key: 'pending', label: 'Pending', icon: Clock, count: pending.length },
+    { key: 'sent', label: 'Sent', icon: Send, count: sent.length },
+    { key: 'search', label: 'Find People', icon: Search },
+    { key: 'graph', label: 'Network', icon: Network },
   ];
 
   return (
-    <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      <div className="flex items-center gap-3 mb-6">
+    <div className="max-w-4xl mx-auto px-4 py-8">
+      <div className="flex items-center space-x-3 mb-6">
         <Users className="h-8 w-8 text-primary-600" />
         <h1 className="text-3xl font-bold text-gray-900">Connections</h1>
       </div>
 
-      {message && <div className="bg-green-50 text-green-700 p-3 rounded-lg mb-4 text-sm">{message}</div>}
-      {error && <div className="bg-red-50 text-red-700 p-3 rounded-lg mb-4 text-sm">{error}</div>}
-
       {/* Tabs */}
-      <div className="flex space-x-1 bg-gray-100 rounded-lg p-1 mb-6 w-fit">
-        {tabs.map(tab => (
-          <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-            className={`px-4 py-2 rounded-md text-sm font-medium transition flex items-center gap-2 ${
-              activeTab === tab.id ? 'bg-white text-primary-700 shadow-sm' : 'text-gray-600 hover:text-gray-800'
+      <div className="flex space-x-1 bg-gray-100 rounded-lg p-1 mb-6 overflow-x-auto">
+        {tabDefs.map(t => (
+          <button key={t.key} onClick={() => setTab(t.key)}
+            className={`flex items-center gap-1.5 px-4 py-2 rounded-md text-sm font-medium transition whitespace-nowrap ${
+              tab === t.key ? 'bg-white text-primary-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'
             }`}>
-            {tab.label}
-            {tab.count !== undefined && <span className="px-1.5 py-0.5 text-xs bg-primary-100 text-primary-700 rounded-full">{tab.count}</span>}
+            <t.icon className="h-4 w-4" />
+            {t.label}
+            {t.count !== undefined && <span className="ml-1 px-1.5 py-0.5 text-xs bg-gray-200 rounded-full">{t.count}</span>}
           </button>
         ))}
       </div>
 
-      {loading ? (
-        <div className="flex justify-center py-20">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
-        </div>
+      {loading && tab !== 'search' && tab !== 'graph' ? (
+        <div className="text-center py-12 text-gray-400">Loading...</div>
       ) : (
         <>
-          {/* My Connections */}
-          {activeTab === 'connections' && (
+          {/* Connections Tab */}
+          {tab === 'connections' && (
             <div className="space-y-3">
               {connections.length === 0 ? (
-                <div className="text-center py-16 text-gray-500">
-                  <Users className="h-12 w-12 mx-auto mb-3 text-gray-300" />
+                <div className="text-center py-12 text-gray-400">
+                  <Users className="h-12 w-12 mx-auto mb-3 opacity-30" />
                   <p>No connections yet. Find people to connect with!</p>
                 </div>
               ) : connections.map(conn => {
-                const other = getOtherUser(conn);
-                return (
-                  <div key={conn.id} className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-primary-100 text-primary-700 rounded-full flex items-center justify-center font-semibold text-sm">
-                        {(other.full_name || '?')[0].toUpperCase()}
-                      </div>
-                      <div>
-                        <p className="font-medium text-gray-900">{other.full_name}</p>
-                        <p className="text-sm text-gray-500">{other.headline || other.email}</p>
-                      </div>
-                    </div>
-                    <div className="flex gap-2">
-                      <span className="flex items-center gap-1 text-xs text-green-600"><CheckCircle className="h-3 w-3" /> Connected</span>
-                      <button onClick={() => removeConnection(conn.id)}
-                        className="text-red-500 hover:text-red-700 text-xs px-2 py-1 rounded hover:bg-red-50 transition">
-                        <UserX className="h-4 w-4" />
-                      </button>
-                    </div>
-                  </div>
-                );
+                const p = getPartnerInfo(conn);
+                return <PersonCard key={conn.id} name={p.name} headline={p.headline} picture={p.picture} />;
               })}
             </div>
           )}
 
-          {/* Pending Requests */}
-          {activeTab === 'pending' && (
+          {/* Pending Tab */}
+          {tab === 'pending' && (
             <div className="space-y-3">
-              {pendingRequests.length === 0 ? (
-                <div className="text-center py-16 text-gray-500">
-                  <Clock className="h-12 w-12 mx-auto mb-3 text-gray-300" />
-                  <p>No pending connection requests</p>
+              {pending.length === 0 ? (
+                <div className="text-center py-12 text-gray-400">
+                  <Clock className="h-12 w-12 mx-auto mb-3 opacity-30" />
+                  <p>No pending requests</p>
                 </div>
-              ) : pendingRequests.map(conn => {
-                const requester = userCache[conn.requester_id] || { full_name: 'Unknown' };
-                return (
-                  <div key={conn.id} className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-yellow-100 text-yellow-700 rounded-full flex items-center justify-center font-semibold text-sm">
-                        {(requester.full_name || '?')[0].toUpperCase()}
-                      </div>
-                      <div>
-                        <p className="font-medium text-gray-900">{requester.full_name}</p>
-                        <p className="text-xs text-gray-400">Sent {new Date(conn.created_at).toLocaleDateString()}</p>
-                      </div>
-                    </div>
-                    <div className="flex gap-2">
-                      <button onClick={() => acceptRequest(conn.id)}
-                        className="flex items-center gap-1 text-xs bg-primary-600 text-white px-3 py-1.5 rounded-lg hover:bg-primary-700 transition">
-                        <UserCheck className="h-3 w-3" /> Accept
-                      </button>
-                      <button onClick={() => removeConnection(conn.id)}
-                        className="flex items-center gap-1 text-xs border border-gray-300 text-gray-600 px-3 py-1.5 rounded-lg hover:bg-gray-50 transition">
-                        <XCircle className="h-3 w-3" /> Decline
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
+              ) : pending.map(conn => (
+                <PersonCard key={conn.id}
+                  name={conn.requester_name}
+                  headline={conn.requester_headline}
+                  picture={conn.requester_picture}
+                  actions={
+                    <>
+                      <button onClick={() => respondRequest(conn.id, true)}
+                        className="px-3 py-1.5 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 transition">Accept</button>
+                      <button onClick={() => respondRequest(conn.id, false)}
+                        className="px-3 py-1.5 bg-red-100 text-red-700 text-sm rounded-lg hover:bg-red-200 transition">Decline</button>
+                    </>
+                  }
+                />
+              ))}
             </div>
           )}
 
-          {/* Find People */}
-          {activeTab === 'find' && (
-            <div>
-              <form onSubmit={handleSearch} className="flex gap-3 mb-6">
-                <div className="flex-1 relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
-                  <input type="text" placeholder="Search by name or email..." value={searchQuery}
-                    onChange={e => setSearchQuery(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none" />
+          {/* Sent Tab */}
+          {tab === 'sent' && (
+            <div className="space-y-3">
+              {sent.length === 0 ? (
+                <div className="text-center py-12 text-gray-400">
+                  <Send className="h-12 w-12 mx-auto mb-3 opacity-30" />
+                  <p>No sent requests</p>
                 </div>
-                <button type="submit" className="bg-primary-600 text-white px-6 py-2.5 rounded-lg font-medium hover:bg-primary-700 transition">
-                  Search
-                </button>
-              </form>
+              ) : sent.map(conn => (
+                <PersonCard key={conn.id}
+                  name={conn.addressee_name}
+                  headline={conn.addressee_headline}
+                  picture={conn.addressee_picture}
+                  actions={
+                    <span className="px-3 py-1.5 bg-yellow-50 text-yellow-700 text-sm rounded-lg font-medium">Pending</span>
+                  }
+                />
+              ))}
+            </div>
+          )}
 
-              <div className="space-y-3">
-                {searchResults.length === 0 && searchQuery && (
-                  <p className="text-center text-gray-500 py-8">No users found for "{searchQuery}"</p>
-                )}
-                {searchResults.map(u => (
-                  <div key={u.id} className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-blue-100 text-blue-700 rounded-full flex items-center justify-center font-semibold text-sm">
-                        {(u.full_name || '?')[0].toUpperCase()}
-                      </div>
-                      <div>
-                        <p className="font-medium text-gray-900">{u.full_name}</p>
-                        <p className="text-sm text-gray-500">{u.email}</p>
-                        <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full uppercase">{u.role}</span>
-                      </div>
-                    </div>
-                    <button onClick={() => sendRequest(u.id)}
-                      className="flex items-center gap-1 text-xs bg-primary-600 text-white px-3 py-1.5 rounded-lg hover:bg-primary-700 transition">
-                      <UserPlus className="h-3 w-3" /> Connect
-                    </button>
-                  </div>
-                ))}
+          {/* Search Tab */}
+          {tab === 'search' && (
+            <div>
+              <div className="flex gap-2 mb-6">
+                <input
+                  type="text" value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+                  placeholder="Search by name or email..."
+                  className="flex-1 px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none"
+                />
+                <button onClick={handleSearch} disabled={searching}
+                  className="px-6 py-2.5 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition disabled:opacity-50">
+                  {searching ? 'Searching...' : 'Search'}
+                </button>
               </div>
+              <div className="space-y-3">
+                {searchResults.map(u => (
+                  <PersonCard key={u.id}
+                    name={u.full_name}
+                    headline={u.headline}
+                    picture={u.profile_picture_url}
+                    actions={
+                      u.connection_status === 'accepted' ? (
+                        <span className="px-3 py-1.5 bg-green-50 text-green-700 text-sm rounded-lg font-medium flex items-center gap-1">
+                          <UserCheck className="h-3.5 w-3.5" /> Connected
+                        </span>
+                      ) : u.connection_status === 'pending' ? (
+                        <span className="px-3 py-1.5 bg-yellow-50 text-yellow-700 text-sm rounded-lg font-medium flex items-center gap-1">
+                          <Clock className="h-3.5 w-3.5" /> Pending
+                        </span>
+                      ) : (
+                        <button onClick={() => sendRequest(u.id)}
+                          className="px-3 py-1.5 bg-primary-600 text-white text-sm rounded-lg hover:bg-primary-700 transition flex items-center gap-1">
+                          <UserPlus className="h-3.5 w-3.5" /> Connect
+                        </button>
+                      )
+                    }
+                  />
+                ))}
+                {searchResults.length === 0 && searchQuery && !searching && (
+                  <div className="text-center py-8 text-gray-400">No results found</div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Graph Tab */}
+          {tab === 'graph' && (
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+              {!graph ? (
+                <div className="text-center py-12 text-gray-400">Loading network graph...</div>
+              ) : (
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Your Network ({graph.nodes?.length || 0} people)</h3>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                    {(graph.nodes || []).map(node => (
+                      <div key={node.id} className="border border-gray-200 rounded-lg p-3 text-center">
+                        <div className="w-10 h-10 rounded-full bg-primary-100 flex items-center justify-center mx-auto mb-2">
+                          <span className="text-primary-600 font-bold">{(node.name || '?')[0].toUpperCase()}</span>
+                        </div>
+                        <p className="text-sm font-medium text-gray-900 truncate">{node.name}</p>
+                        <p className="text-xs text-gray-400">{node.mutual_count || 0} mutual</p>
+                      </div>
+                    ))}
+                  </div>
+                  {(!graph.nodes || graph.nodes.length === 0) && (
+                    <div className="text-center py-8 text-gray-400">No connections in your network yet</div>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </>

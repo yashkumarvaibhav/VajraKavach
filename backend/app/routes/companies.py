@@ -1,12 +1,13 @@
 """
 VajraKavach — Company Routes
-Company page CRUD for recruiters.
+Company page CRUD for recruiters; searchable by all users.
 """
 
 import uuid
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, Depends, HTTPException, status, Request, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, or_
+from typing import Optional
 
 from app.database import get_db
 from app.models.company import Company
@@ -59,6 +60,40 @@ async def create_company(
     )
 
 
+@router.get("/search", response_model=list[CompanyResponse])
+async def search_companies(
+    q: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Search companies by name or location (accessible to all authenticated users)."""
+    query = select(Company)
+    if q:
+        query = query.where(
+            or_(
+                Company.name.ilike(f"%{q}%"),
+                Company.location.ilike(f"%{q}%"),
+            )
+        )
+    query = query.order_by(Company.name).limit(50)
+    result = await db.execute(query)
+    companies = result.scalars().all()
+
+    return [
+        CompanyResponse(
+            id=str(c.id),
+            name=c.name,
+            description=c.description,
+            location=c.location,
+            website=c.website,
+            is_verified=c.is_verified,
+            admin_id=str(c.admin_id),
+            created_at=c.created_at,
+        )
+        for c in companies
+    ]
+
+
 @router.get("/", response_model=list[CompanyResponse])
 async def list_companies(
     db: AsyncSession = Depends(get_db),
@@ -66,6 +101,32 @@ async def list_companies(
 ):
     """List all companies."""
     result = await db.execute(select(Company))
+    companies = result.scalars().all()
+
+    return [
+        CompanyResponse(
+            id=str(c.id),
+            name=c.name,
+            description=c.description,
+            location=c.location,
+            website=c.website,
+            is_verified=c.is_verified,
+            admin_id=str(c.admin_id),
+            created_at=c.created_at,
+        )
+        for c in companies
+    ]
+
+
+@router.get("/my", response_model=list[CompanyResponse])
+async def my_companies(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role("recruiter", "admin")),
+):
+    """List companies owned by the current recruiter."""
+    result = await db.execute(
+        select(Company).where(Company.admin_id == current_user.id)
+    )
     companies = result.scalars().all()
 
     return [

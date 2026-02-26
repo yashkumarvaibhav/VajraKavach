@@ -1,11 +1,11 @@
 """
 VajraKavach — Resume Routes
-Secure resume upload (encrypted at rest), download with access control.
+Secure resume upload (encrypted at rest), download with TOTP verification.
 """
 
 import uuid
 import os
-from fastapi import APIRouter, Depends, HTTPException, status, Request, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, status, Request, UploadFile, File, Query
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -18,6 +18,7 @@ from app.dependencies import get_current_user
 from app.services.resume_service import save_encrypted_resume, read_decrypted_resume
 from app.services.pki_service import verify_signature
 from app.services.audit_service import create_audit_log
+from app.services.totp_service import verify_totp
 
 router = APIRouter(prefix="/api/resumes", tags=["Resumes"])
 
@@ -115,21 +116,23 @@ async def my_resumes(
 async def download_resume(
     resume_id: str,
     request: Request,
+    totp_token: str = Query(..., description="TOTP token required for document download"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """
-    Download a resume. Access control:
-      - Owner can always download
-      - Recruiters can download if they have an application referencing this resume
-      - Admins can download any resume
-    """
+    """Download a resume. Requires TOTP verification. Owner/recruiter/admin access."""
+    # Verify TOTP first (high-risk action)
+    if not current_user.totp_secret:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="TOTP not configured")
+
+    if not verify_totp(current_user.totp_secret, totp_token):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid TOTP token")
+
     result = await db.execute(select(Resume).where(Resume.id == resume_id))
     resume = result.scalar_one_or_none()
     if not resume:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Resume not found")
 
-    # Access control
     is_owner = str(resume.user_id) == str(current_user.id)
     is_admin = current_user.role.value == "admin"
     is_recruiter = current_user.role.value == "recruiter"
@@ -137,7 +140,6 @@ async def download_resume(
     if not (is_owner or is_admin or is_recruiter):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
 
-    # Decrypt and serve
     try:
         decrypted_content = await read_decrypted_resume(resume.encrypted_path)
     except Exception:
@@ -149,7 +151,7 @@ async def download_resume(
         user_id=str(current_user.id),
         resource="resume",
         resource_id=str(resume.id),
-        details={"filename": resume.original_filename, "downloader_role": current_user.role.value},
+        details={"filename": resume.original_filename, "downloader_role": current_user.role.value, "totp_verified": True},
         ip_address=request.client.host if request.client else None,
     )
 
@@ -168,7 +170,7 @@ async def verify_resume_integrity(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Verify resume integrity using PKI digital signature (PKI function #2)."""
+    """Verify resume integrity using PKI digital signature."""
     result = await db.execute(select(Resume).where(Resume.id == resume_id))
     resume = result.scalar_one_or_none()
     if not resume:
@@ -177,13 +179,11 @@ async def verify_resume_integrity(
     if not resume.digital_signature:
         return {"verified": False, "message": "No digital signature available for this resume"}
 
-    # Decrypt the resume to get original content
     try:
         decrypted_content = await read_decrypted_resume(resume.encrypted_path)
     except Exception:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to decrypt resume")
 
-    # Verify with server's public certificate
     cert_path = os.path.join("certs", "server.crt")
     if not os.path.exists(cert_path):
         return {"verified": False, "message": "Server certificate not available"}
@@ -223,7 +223,6 @@ async def delete_resume(
     if str(resume.user_id) != str(current_user.id) and current_user.role.value != "admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
 
-    # Remove encrypted file
     if os.path.exists(resume.encrypted_path):
         os.remove(resume.encrypted_path)
 

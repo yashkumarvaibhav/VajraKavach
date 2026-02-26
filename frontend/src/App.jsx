@@ -14,6 +14,7 @@ import MessagesPage from './pages/MessagesPage';
 import CompanyPage from './pages/CompanyPage';
 import ApplicationsPage from './pages/ApplicationsPage';
 import AdminDashboard from './pages/AdminDashboard';
+import SecurityPage from './pages/SecurityPage';
 
 function ProtectedRoute({ children, requiredRole, allowedRoles }) {
   const { user, loading, totpRequired } = useAuth();
@@ -51,12 +52,14 @@ export default function App() {
         <Route path="/verify-totp" element={<TOTPVerifyPage />} />
         <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
         <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
+        <Route path="/resume" element={<ProtectedRoute><ResumePage /></ProtectedRoute>} />
         <Route path="/resumes" element={<ProtectedRoute><ResumePage /></ProtectedRoute>} />
         <Route path="/jobs" element={<ProtectedRoute><JobsPage /></ProtectedRoute>} />
         <Route path="/connections" element={<ProtectedRoute><ConnectionsPage /></ProtectedRoute>} />
         <Route path="/messages" element={<ProtectedRoute><MessagesPage /></ProtectedRoute>} />
-        <Route path="/companies" element={<ProtectedRoute allowedRoles={['recruiter', 'admin']}><CompanyPage /></ProtectedRoute>} />
+        <Route path="/companies" element={<ProtectedRoute><CompanyPage /></ProtectedRoute>} />
         <Route path="/applications" element={<ProtectedRoute><ApplicationsPage /></ProtectedRoute>} />
+        <Route path="/security" element={<ProtectedRoute><SecurityPage /></ProtectedRoute>} />
         <Route path="/admin" element={<ProtectedRoute requiredRole="admin"><AdminDashboard /></ProtectedRoute>} />
         <Route path="*" element={<Navigate to="/" />} />
       </Routes>

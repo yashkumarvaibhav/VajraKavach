@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { Shield, Key } from 'lucide-react';
+import { Shield, Key, QrCode } from 'lucide-react';
 import VirtualKeyboard from '../components/VirtualKeyboard';
 
 export default function TOTPVerifyPage() {
@@ -9,8 +9,12 @@ export default function TOTPVerifyPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [useVirtualKb, setUseVirtualKb] = useState(true);
-  const { verifyTotp } = useAuth();
+  const { verifyTotp, totpSetupData } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+
+  // Get setup data from navigation state or context
+  const setupData = location.state?.totpSetupData || totpSetupData;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -42,9 +46,35 @@ export default function TOTPVerifyPage() {
       <div className="max-w-md w-full bg-white rounded-2xl shadow-xl p-8">
         <div className="text-center mb-8">
           <Key className="h-12 w-12 text-primary-600 mx-auto mb-3" />
-          <h1 className="text-2xl font-bold text-gray-900">TOTP Verification</h1>
-          <p className="text-gray-500 mt-1">Enter the 6-digit code from your authenticator app</p>
+          <h1 className="text-2xl font-bold text-gray-900">
+            {setupData ? 'Set Up Authenticator' : 'TOTP Verification'}
+          </h1>
+          <p className="text-gray-500 mt-1">
+            {setupData
+              ? 'Scan the QR code below with your authenticator app (e.g. Google Authenticator), then enter the 6-digit code.'
+              : 'Enter the 6-digit code from your authenticator app'}
+          </p>
         </div>
+
+        {setupData && setupData.qr_code_base64 && (
+          <div className="mb-6 flex flex-col items-center">
+            <div className="bg-white p-3 rounded-xl border-2 border-primary-200 shadow-sm">
+              <img
+                src={`data:image/png;base64,${setupData.qr_code_base64}`}
+                alt="TOTP QR Code"
+                className="w-48 h-48"
+              />
+            </div>
+            {setupData.totp_secret && (
+              <div className="mt-3 text-center">
+                <p className="text-xs text-gray-400">Manual entry key:</p>
+                <code className="text-xs bg-gray-100 px-2 py-1 rounded font-mono text-gray-700 select-all">
+                  {setupData.totp_secret}
+                </code>
+              </div>
+            )}
+          </div>
+        )}
 
         {error && (
           <div className="bg-red-50 text-red-700 p-3 rounded-lg mb-4 text-sm">{error}</div>

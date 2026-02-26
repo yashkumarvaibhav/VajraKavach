@@ -1,6 +1,6 @@
 """
 VajraKavach — Auth Routes
-Registration, login, TOTP setup & verification, token refresh.
+Registration, login, TOTP setup & verification, token refresh, password change.
 """
 
 import uuid
@@ -14,7 +14,7 @@ from app.models.user import User, UserProfile, UserRole
 from app.schemas.auth import (
     RegisterRequest, LoginRequest, TOTPVerifyRequest,
     TokenResponse, TOTPSetupResponse, RefreshTokenRequest,
-    PasswordResetRequest,
+    PasswordChangeRequest, SetupVerifyRequest,
 )
 from app.schemas.user import UserResponse
 from app.services.auth_service import (
@@ -38,12 +38,10 @@ async def register(
     db: AsyncSession = Depends(get_db),
 ):
     """Register a new user. Returns TOTP setup QR code."""
-    # Check if email already exists
     existing = await db.execute(select(User).where(User.email == req.email))
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
 
-    # Validate role — admin registration is NEVER allowed from public endpoint
     role = UserRole.USER
     if req.role == "recruiter":
         role = UserRole.RECRUITER
@@ -53,16 +51,10 @@ async def register(
             detail="Admin accounts cannot be created through public registration.",
         )
 
-    # Hash password with Argon2
     hashed_pw = hash_password(req.password)
-
-    # Generate TOTP secret
     totp_secret = generate_totp_secret()
-
-    # Generate RSA key pair for E2E messaging / signing
     private_key_pem, public_key_pem = generate_rsa_key_pair()
 
-    # Create user
     user = User(
         id=uuid.uuid4(),
         email=req.email,
@@ -76,16 +68,13 @@ async def register(
     )
     db.add(user)
 
-    # Create empty profile
     profile = UserProfile(
         id=uuid.uuid4(),
         user_id=user.id,
     )
     db.add(profile)
-
     await db.flush()
 
-    # Audit log
     await create_audit_log(
         db=db,
         action="user.register",
@@ -96,15 +85,51 @@ async def register(
         ip_address=request.client.host if request.client else None,
     )
 
-    # Generate QR code for TOTP setup
     totp_uri = get_totp_uri(totp_secret, req.email)
     qr_b64 = generate_qr_code_base64(totp_uri)
 
     return TOTPSetupResponse(
         totp_secret=totp_secret,
         qr_code_base64=qr_b64,
-        message="Account created! Scan the QR code with your authenticator app (e.g., Google Authenticator), then verify with a TOTP token.",
+        message="Account created! Scan the QR code with your authenticator app, then verify with a TOTP token.",
     )
+
+
+@router.post("/setup-verify")
+async def setup_verify(
+    req: SetupVerifyRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Verify TOTP during registration flow (before first login).
+    This marks the user's TOTP as verified so the QR code won't be shown again on login."""
+    result = await db.execute(select(User).where(User.email == req.email))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    if user.totp_verified:
+        return {"message": "TOTP already verified"}
+
+    if not user.totp_secret:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="TOTP not set up")
+
+    if not verify_totp(user.totp_secret, req.token):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid TOTP token")
+
+    user.totp_verified = True
+    await db.flush()
+
+    await create_audit_log(
+        db=db,
+        action="user.totp_setup_verified",
+        user_id=str(user.id),
+        resource="user",
+        resource_id=str(user.id),
+        ip_address=request.client.host if request.client else None,
+    )
+
+    return {"message": "TOTP verified successfully! You can now log in."}
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -118,7 +143,6 @@ async def login(
     user = result.scalar_one_or_none()
 
     if not user or not verify_password(req.password, user.hashed_password):
-        # Audit failed login
         await create_audit_log(
             db=db,
             action="user.login_failed",
@@ -130,12 +154,10 @@ async def login(
     if not user.is_active or user.is_suspended:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account is suspended or deactivated")
 
-    # Issue JWT tokens (totp_verified=False — user must still verify TOTP)
     token_data = {"sub": str(user.id), "email": user.email, "role": user.role.value, "totp_verified": False}
     access_token = create_access_token(token_data)
     refresh_token = create_refresh_token(token_data)
 
-    # Audit
     await create_audit_log(
         db=db,
         action="user.login",
@@ -145,13 +167,24 @@ async def login(
         ip_address=request.client.host if request.client else None,
     )
 
-    # Update last login
     user.last_login = datetime.utcnow()
+
+    # If TOTP hasn't been verified yet (first-time setup), include QR code
+    totp_setup_required = not user.totp_verified
+    totp_secret = None
+    qr_code_b64 = None
+    if totp_setup_required and user.totp_secret:
+        totp_secret = user.totp_secret
+        totp_uri = get_totp_uri(user.totp_secret, user.email)
+        qr_code_b64 = generate_qr_code_base64(totp_uri)
 
     return TokenResponse(
         access_token=access_token,
         refresh_token=refresh_token,
         totp_required=True,
+        totp_setup_required=totp_setup_required,
+        totp_secret=totp_secret,
+        qr_code_base64=qr_code_b64,
     )
 
 
@@ -177,11 +210,9 @@ async def verify_totp_endpoint(
         )
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid TOTP token")
 
-    # Mark TOTP as verified (first time setup)
     if not current_user.totp_verified:
         current_user.totp_verified = True
 
-    # Issue new tokens with totp_verified=True
     token_data = {
         "sub": str(current_user.id),
         "email": current_user.email,
@@ -235,30 +266,32 @@ async def refresh_token(req: RefreshTokenRequest, db: AsyncSession = Depends(get
     )
 
 
-@router.post("/password-reset")
-async def reset_password(
-    req: PasswordResetRequest,
+@router.post("/change-password")
+async def change_password(
+    req: PasswordChangeRequest,
     request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Reset password (requires TOTP verification — high-risk action)."""
-    # Verify TOTP for this high-risk action
+    """Change password (requires current password + TOTP verification)."""
+    if not verify_password(req.current_password, current_user.hashed_password):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Current password is incorrect")
+
     if not verify_totp(current_user.totp_secret, req.totp_token):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid TOTP token for password reset")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid TOTP token")
 
     current_user.hashed_password = hash_password(req.new_password)
 
     await create_audit_log(
         db=db,
-        action="user.password_reset",
+        action="user.password_change",
         user_id=str(current_user.id),
         resource="user",
         resource_id=str(current_user.id),
         ip_address=request.client.host if request.client else None,
     )
 
-    return {"message": "Password updated successfully"}
+    return {"message": "Password changed successfully"}
 
 
 @router.get("/me", response_model=UserResponse)
@@ -270,6 +303,7 @@ async def get_me(current_user: User = Depends(get_current_user)):
         full_name=current_user.full_name,
         role=current_user.role.value,
         is_active=current_user.is_active,
+        is_suspended=current_user.is_suspended,
         totp_verified=current_user.totp_verified,
         created_at=current_user.created_at,
     )

@@ -9,16 +9,16 @@ from datetime import datetime
 
 class CompanyCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
-    description: Optional[str] = None
-    location: Optional[str] = None
-    website: Optional[str] = None
+    description: str = Field(..., min_length=1, max_length=5000)
+    location: str = Field(..., min_length=1, max_length=255)
+    website: str = Field(..., min_length=1, max_length=512)
 
 
 class CompanyUpdate(BaseModel):
-    name: Optional[str] = None
-    description: Optional[str] = None
-    location: Optional[str] = None
-    website: Optional[str] = None
+    name: Optional[str] = Field(None, max_length=255)
+    description: Optional[str] = Field(None, max_length=5000)
+    location: Optional[str] = Field(None, max_length=255)
+    website: Optional[str] = Field(None, max_length=512)
 
 
 class CompanyResponse(BaseModel):

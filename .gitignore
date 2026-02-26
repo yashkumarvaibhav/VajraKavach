@@ -37,3 +37,6 @@ Thumbs.db
 .backend.pid
 .frontend.pid
 logs/
+
+# Personal notes
+currentproblems.txt

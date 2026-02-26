@@ -61,6 +61,7 @@ async def list_all_users(
             full_name=u.full_name,
             role=u.role.value,
             is_active=u.is_active,
+            is_suspended=u.is_suspended,
             totp_verified=u.totp_verified,
             created_at=u.created_at,
         )
@@ -96,6 +97,7 @@ async def suspend_user(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot suspend yourself")
 
     user.is_suspended = True
+    user.is_active = False
 
     await create_audit_log(
         db=db,
@@ -179,7 +181,6 @@ async def create_admin(
     current_user: User = Depends(require_role("admin")),
 ):
     """Create a new admin account (admin only). Returns TOTP setup info."""
-    # Check if email is taken
     existing = await db.execute(select(User).where(User.email == req.email))
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
@@ -366,6 +367,7 @@ async def admin_dashboard(
     app_count = (await db.execute(select(func.count(Application.id)))).scalar()
     resume_count = (await db.execute(select(func.count(Resume.id)))).scalar()
     log_count = (await db.execute(select(func.count(AuditLog.id)))).scalar()
+    suspended_count = (await db.execute(select(func.count(User.id)).where(User.is_suspended == True))).scalar()
 
     return {
         "total_users": user_count,
@@ -374,4 +376,5 @@ async def admin_dashboard(
         "total_applications": app_count,
         "total_resumes": resume_count,
         "total_audit_logs": log_count,
+        "suspended_users": suspended_count,
     }

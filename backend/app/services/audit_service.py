@@ -13,7 +13,7 @@ from sqlalchemy import select, desc
 from app.models.audit import AuditLog
 
 
-GENESIS_HASH = "0" * 64  # Genesis block hash
+GENESIS_HASH = "0" * 64
 
 
 def _compute_entry_hash(
@@ -51,12 +51,11 @@ async def create_audit_log(
     details: Optional[dict] = None,
     ip_address: Optional[str] = None,
 ) -> AuditLog:
-    """
-    Create a new tamper-evident audit log entry.
-    The entry_hash chains to the previous entry for tamper detection.
-    """
     previous_hash = await get_last_hash(db)
-    timestamp = datetime.utcnow().isoformat()
+
+    # CRITICAL: Use the SAME datetime object for both hash and DB field
+    now = datetime.utcnow()
+    timestamp = now.isoformat()
     details_str = json.dumps(details) if details else ""
 
     entry_hash = _compute_entry_hash(
@@ -80,7 +79,7 @@ async def create_audit_log(
         ip_address=ip_address,
         entry_hash=entry_hash,
         previous_hash=previous_hash,
-        created_at=datetime.utcnow(),
+        created_at=now,  # Same object used for hash computation
     )
 
     db.add(log_entry)
@@ -89,10 +88,6 @@ async def create_audit_log(
 
 
 async def verify_audit_chain(db: AsyncSession) -> dict:
-    """
-    Verify the integrity of the entire audit log chain.
-    Returns {"valid": True/False, "broken_at": entry_id or None}.
-    """
     result = await db.execute(
         select(AuditLog).order_by(AuditLog.created_at)
     )
@@ -103,7 +98,6 @@ async def verify_audit_chain(db: AsyncSession) -> dict:
 
     expected_prev = GENESIS_HASH
     for log in logs:
-        # Recompute hash
         recomputed = _compute_entry_hash(
             action=log.action,
             user_id=str(log.user_id) if log.user_id else "",

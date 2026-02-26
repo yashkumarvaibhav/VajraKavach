@@ -34,12 +34,13 @@ class Job(Base):
 
     title = Column(String(255), nullable=False, index=True)
     description = Column(Text, nullable=False)
-    required_skills = Column(JSON, nullable=True)      # list of strings
+    required_skills = Column(JSON, nullable=True)
     location = Column(String(255), nullable=True)
     location_type = Column(SAEnum(LocationType), default=LocationType.ONSITE)
     job_type = Column(SAEnum(JobType), default=JobType.FULL_TIME)
     salary_min = Column(String(50), nullable=True)
     salary_max = Column(String(50), nullable=True)
+    salary_currency = Column(String(5), default="INR", server_default="INR")
     application_deadline = Column(Date, nullable=True)
     is_active = Column(Boolean, default=True)
 
@@ -52,5 +53,3 @@ class Job(Base):
 
     def __repr__(self):
         return f"<Job {self.title} @ {self.company_id}>"
-
-

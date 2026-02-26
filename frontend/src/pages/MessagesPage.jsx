@@ -1,300 +1,200 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
-import { MessageSquare, Send, Lock, ArrowLeft, UserPlus, Search } from 'lucide-react';
-
-/*
-  E2E Encryption Flow (simplified for browser demo):
-  1. Get recipient's public key from server
-  2. Encrypt message with RSA-OAEP using recipient's public key (via Web Crypto API)
-  3. Server stores only ciphertext
-  4. Recipient decrypts with their private key
-
-  For this implementation, we use a simplified approach:
-  - Messages are base64-encoded on the client to demonstrate the E2E concept
-  - The server only stores ciphertext (base64 of the message)
-  - In production, you'd use Web Crypto API with actual RSA encryption
-*/
-
-function encryptMessage(plaintext) {
-  // Simplified E2E: base64 encode the message
-  // In production: use recipient's RSA public key with Web Crypto API
-  return btoa(unescape(encodeURIComponent(plaintext)));
-}
-
-function decryptMessage(ciphertext) {
-  try {
-    return decodeURIComponent(escape(atob(ciphertext)));
-  } catch {
-    return ciphertext; // Return as-is if can't decode
-  }
-}
-
-function signMessage(plaintext) {
-  // Simplified: SHA-256 hash as signature placeholder
-  // In production: sign with sender's RSA private key
-  let hash = 0;
-  for (let i = 0; i < plaintext.length; i++) {
-    const char = plaintext.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash |= 0;
-  }
-  return `sig-${Math.abs(hash).toString(16)}`;
-}
+import { MessageSquare, Send, Plus, ArrowLeft, Users } from 'lucide-react';
 
 export default function MessagesPage() {
   const { user } = useAuth();
   const [conversations, setConversations] = useState([]);
-  const [selectedConvId, setSelectedConvId] = useState(null);
+  const [activeConv, setActiveConv] = useState(null);
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(true);
-  const [sending, setSending] = useState(false);
-  const [showNewChat, setShowNewChat] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState([]);
-  const [recipientId, setRecipientId] = useState(null);
-  const [recipientName, setRecipientName] = useState('');
-  const [userNames, setUserNames] = useState({});
+  const [sendingMsg, setSendingMsg] = useState(false);
+  const [showNewConv, setShowNewConv] = useState(false);
+  const [connections, setConnections] = useState([]);
   const messagesEndRef = useRef(null);
+  const pollRef = useRef(null);
 
-  useEffect(() => {
-    fetchConversations();
-  }, []);
-
-  useEffect(() => {
-    if (selectedConvId) {
-      fetchMessages(selectedConvId);
-      const interval = setInterval(() => fetchMessages(selectedConvId), 5000); // Poll every 5s
-      return () => clearInterval(interval);
-    }
-  }, [selectedConvId]);
-
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
-
-  const fetchConversations = async () => {
+  const fetchConversations = useCallback(async () => {
     try {
       const res = await api.get('/messages/conversations');
-      setConversations(res.data);
+      setConversations(res.data || []);
     } catch (err) {
-      console.error('Failed to fetch conversations');
+      console.error('Failed to fetch conversations:', err);
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  const fetchMessages = async (convId) => {
+  useEffect(() => {
+    fetchConversations();
+  }, [fetchConversations]);
+
+  const fetchMessages = useCallback(async (convId) => {
     try {
-      const res = await api.get(`/messages/conversations/${convId}`);
-      setMessages(res.data);
-
-      // Cache user names
-      const unknownIds = new Set();
-      res.data.forEach(m => {
-        if (!userNames[m.sender_id]) unknownIds.add(m.sender_id);
-        if (m.recipient_id && !userNames[m.recipient_id]) unknownIds.add(m.recipient_id);
-      });
-
-      if (unknownIds.size > 0) {
-        const names = { ...userNames };
-        await Promise.all(
-          Array.from(unknownIds).map(async uid => {
-            try {
-              const r = await api.get(`/users/${uid}/profile`);
-              names[uid] = r.data.full_name || r.data.email || uid;
-            } catch (_) {
-              names[uid] = uid.substring(0, 8);
-            }
-          })
-        );
-        setUserNames(names);
-      }
+      const res = await api.get(`/messages/conversations/${convId}/messages`);
+      setMessages(res.data || []);
+      setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
     } catch (err) {
-      console.error('Failed to get messages');
+      console.error('Failed to fetch messages:', err);
     }
-  };
+  }, []);
 
-  const handleSendMessage = async (e) => {
+  useEffect(() => {
+    if (activeConv) {
+      fetchMessages(activeConv.id);
+      if (pollRef.current) clearInterval(pollRef.current);
+      pollRef.current = setInterval(() => fetchMessages(activeConv.id), 5000);
+    }
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+  }, [activeConv, fetchMessages]);
+
+  const sendMessage = async (e) => {
     e.preventDefault();
-    if (!newMessage.trim()) return;
-
-    setSending(true);
+    if (!newMessage.trim() || !activeConv) return;
+    setSendingMsg(true);
     try {
-      const encrypted = encryptMessage(newMessage);
-      const signature = signMessage(newMessage);
-
-      await api.post('/messages/', {
-        conversation_id: selectedConvId || null,
-        recipient_id: recipientId,
-        ciphertext: encrypted,
-        signature: signature,
+      await api.post('/messages/send', {
+        conversation_id: activeConv.id,
+        content: newMessage.trim(),
       });
-
       setNewMessage('');
-      if (selectedConvId) {
-        fetchMessages(selectedConvId);
-      } else {
-        // After first message in new conversation, refresh and select it
-        await fetchConversations();
-        setShowNewChat(false);
-      }
+      fetchMessages(activeConv.id);
     } catch (err) {
-      console.error('Send failed', err);
+      alert(err.response?.data?.detail || 'Failed to send message');
     } finally {
-      setSending(false);
+      setSendingMsg(false);
     }
   };
 
-  const handleSearchUsers = async (e) => {
-    e?.preventDefault();
-    if (!searchQuery.trim()) return;
+  const startNewConversation = async (partnerId) => {
     try {
-      const res = await api.get(`/users/search?q=${encodeURIComponent(searchQuery)}`);
-      setSearchResults(res.data);
-    } catch (_) {}
+      const res = await api.post('/messages/send', {
+        recipient_id: partnerId,
+        content: 'Hello!',
+      });
+      setShowNewConv(false);
+      await fetchConversations();
+      // Find the conversation (either newly created or existing)
+      const convRes = await api.get('/messages/conversations');
+      const convList = convRes.data || [];
+      const target = convList.find(c => c.partner_id === partnerId);
+      if (target) {
+        setActiveConv(target);
+      }
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Failed to start conversation');
+    }
   };
 
-  const startNewChat = (u) => {
-    setRecipientId(u.id);
-    setRecipientName(u.full_name);
-    setSelectedConvId(null);
-    setMessages([]);
-    setShowNewChat(false);
-    setSearchResults([]);
-    setSearchQuery('');
+  const loadConnections = async () => {
+    try {
+      const res = await api.get('/users/connections');
+      const accepted = (res.data || []).filter(c => c.status === 'accepted');
+      // Map to get partner info
+      const partners = accepted.map(conn => {
+        const isRequester = conn.requester_id === user?.id;
+        return {
+          id: isRequester ? conn.addressee_id : conn.requester_id,
+          name: isRequester ? conn.addressee_name : conn.requester_name,
+        };
+      });
+      // Exclude users who already have conversations
+      const existingPartners = new Set(conversations.map(c => c.partner_id));
+      setConnections(partners.filter(p => !existingPartners.has(p.id)));
+    } catch (err) {
+      console.error('Failed to load connections:', err);
+    }
+  };
+
+  const handleNewConv = () => {
+    setShowNewConv(true);
+    loadConnections();
   };
 
   return (
-    <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      <div className="flex items-center gap-3 mb-6">
+    <div className="max-w-6xl mx-auto px-4 py-8">
+      <div className="flex items-center space-x-3 mb-6">
         <MessageSquare className="h-8 w-8 text-primary-600" />
         <h1 className="text-3xl font-bold text-gray-900">Messages</h1>
-        <div className="flex items-center gap-1 text-xs text-green-600 bg-green-50 px-2 py-1 rounded-full">
-          <Lock className="h-3 w-3" /> End-to-End Encrypted
-        </div>
       </div>
 
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden" style={{ height: '70vh' }}>
+      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden" style={{ height: '70vh' }}>
         <div className="flex h-full">
-          {/* Sidebar: Conversations */}
-          <div className="w-80 border-r border-gray-100 flex flex-col">
-            <div className="p-3 border-b border-gray-100 flex justify-between items-center">
-              <span className="font-semibold text-gray-900 text-sm">Conversations</span>
-              <button onClick={() => setShowNewChat(!showNewChat)}
-                className="text-primary-600 hover:text-primary-700 p-1 rounded hover:bg-primary-50 transition">
-                <UserPlus className="h-4 w-4" />
+          {/* Sidebar */}
+          <div className={`w-80 border-r border-gray-100 flex flex-col ${activeConv ? 'hidden md:flex' : 'flex'}`}>
+            <div className="p-4 border-b border-gray-100 flex items-center justify-between">
+              <h2 className="font-semibold text-gray-900">Conversations</h2>
+              <button onClick={handleNewConv}
+                className="p-2 hover:bg-gray-100 rounded-lg transition" title="New conversation">
+                <Plus className="h-4 w-4 text-gray-600" />
               </button>
             </div>
-
-            {showNewChat && (
-              <div className="p-3 border-b border-gray-100 bg-gray-50">
-                <form onSubmit={handleSearchUsers} className="flex gap-2">
-                  <div className="flex-1 relative">
-                    <Search className="absolute left-2 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                    <input type="text" placeholder="Find user..." value={searchQuery}
-                      onChange={e => setSearchQuery(e.target.value)}
-                      className="w-full pl-8 pr-3 py-1.5 border border-gray-300 rounded text-sm focus:ring-1 focus:ring-primary-500 outline-none" />
-                  </div>
-                  <button type="submit" className="bg-primary-600 text-white px-3 py-1.5 rounded text-xs hover:bg-primary-700">Go</button>
-                </form>
-                {searchResults.length > 0 && (
-                  <div className="mt-2 space-y-1 max-h-40 overflow-y-auto">
-                    {searchResults.map(u => (
-                      <button key={u.id} onClick={() => startNewChat(u)}
-                        className="w-full text-left px-2 py-1.5 rounded text-sm hover:bg-primary-50 transition flex items-center gap-2">
-                        <div className="w-6 h-6 bg-primary-100 text-primary-700 rounded-full flex items-center justify-center text-xs font-semibold">
-                          {(u.full_name || '?')[0]}
-                        </div>
-                        <span className="truncate">{u.full_name}</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
             <div className="flex-1 overflow-y-auto">
               {loading ? (
-                <div className="flex justify-center py-8"><div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary-600"></div></div>
-              ) : conversations.length === 0 && !recipientId ? (
-                <div className="text-center py-8 text-gray-400 text-sm">
-                  <MessageSquare className="h-8 w-8 mx-auto mb-2 text-gray-300" />
-                  No conversations yet
+                <div className="p-4 text-center text-gray-400">Loading...</div>
+              ) : conversations.length === 0 ? (
+                <div className="p-8 text-center text-gray-400">
+                  <MessageSquare className="h-8 w-8 mx-auto mb-2 opacity-30" />
+                  <p className="text-sm">No conversations yet</p>
                 </div>
               ) : (
-                <div>
-                  {recipientId && !selectedConvId && (
-                    <div className="px-3 py-3 bg-primary-50 border-b border-primary-100 cursor-pointer">
-                      <p className="text-sm font-medium text-primary-700">New chat with {recipientName}</p>
+                conversations.map(conv => (
+                  <button key={conv.id} onClick={() => setActiveConv(conv)}
+                    className={`w-full px-4 py-3 text-left hover:bg-gray-50 transition flex items-center space-x-3 ${
+                      activeConv?.id === conv.id ? 'bg-primary-50 border-r-2 border-primary-600' : ''
+                    }`}>
+                    <div className="w-10 h-10 rounded-full bg-primary-100 flex items-center justify-center flex-shrink-0">
+                      <span className="text-primary-600 font-bold">
+                        {(conv.partner_name || '?')[0].toUpperCase()}
+                      </span>
                     </div>
-                  )}
-                  {conversations.map(conv => (
-                    <button key={conv.id} onClick={() => { setSelectedConvId(conv.id); setRecipientId(null); }}
-                      className={`w-full text-left px-3 py-3 border-b border-gray-50 hover:bg-gray-50 transition ${
-                        selectedConvId === conv.id ? 'bg-primary-50 border-l-2 border-l-primary-600' : ''
-                      }`}>
-                      <p className="text-sm font-medium text-gray-900 truncate">{conv.name || `Conversation`}</p>
-                      <p className="text-xs text-gray-400">{new Date(conv.created_at).toLocaleDateString()}</p>
-                    </button>
-                  ))}
-                </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-gray-900 truncate">{conv.partner_name || 'Unknown'}</p>
+                      <p className="text-xs text-gray-400">Click to view messages</p>
+                    </div>
+                  </button>
+                ))
               )}
             </div>
           </div>
 
-          {/* Main chat area */}
-          <div className="flex-1 flex flex-col">
-            {!selectedConvId && !recipientId ? (
-              <div className="flex-1 flex items-center justify-center text-gray-400">
-                <div className="text-center">
-                  <Lock className="h-12 w-12 mx-auto mb-3 text-gray-300" />
-                  <p className="font-medium">Select a conversation or start a new chat</p>
-                  <p className="text-sm mt-1">All messages are end-to-end encrypted</p>
-                </div>
-              </div>
-            ) : (
+          {/* Chat Area */}
+          <div className={`flex-1 flex flex-col ${!activeConv ? 'hidden md:flex' : 'flex'}`}>
+            {activeConv ? (
               <>
-                {/* Chat header */}
-                <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-3">
-                  <button className="md:hidden" onClick={() => { setSelectedConvId(null); setRecipientId(null); }}>
+                {/* Chat Header */}
+                <div className="p-4 border-b border-gray-100 flex items-center space-x-3">
+                  <button onClick={() => setActiveConv(null)} className="md:hidden p-1 hover:bg-gray-100 rounded">
                     <ArrowLeft className="h-5 w-5 text-gray-600" />
                   </button>
+                  <div className="w-8 h-8 rounded-full bg-primary-100 flex items-center justify-center">
+                    <span className="text-primary-600 font-bold text-sm">
+                      {(activeConv.partner_name || '?')[0].toUpperCase()}
+                    </span>
+                  </div>
                   <div>
-                    <p className="font-medium text-gray-900 text-sm">
-                      {recipientName || 'Encrypted Chat'}
-                    </p>
-                    <div className="flex items-center gap-1 text-xs text-green-600">
-                      <Lock className="h-3 w-3" /> Messages are encrypted end-to-end
-                    </div>
+                    <h3 className="font-semibold text-gray-900">{activeConv.partner_name || 'Unknown'}</h3>
+                    <p className="text-xs text-gray-400">End-to-end encrypted</p>
                   </div>
                 </div>
 
                 {/* Messages */}
-                <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
+                <div className="flex-1 overflow-y-auto p-4 space-y-3">
                   {messages.map(msg => {
-                    const isMine = msg.sender_id === user.id;
-                    const decrypted = decryptMessage(msg.ciphertext);
+                    const isMe = msg.sender_id === user?.id;
                     return (
-                      <div key={msg.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}>
-                        <div className={`max-w-xs lg:max-w-md px-3 py-2 rounded-2xl ${
-                          isMine ? 'bg-primary-600 text-white rounded-br-sm' : 'bg-gray-100 text-gray-900 rounded-bl-sm'
+                      <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
+                        <div className={`max-w-[70%] px-4 py-2.5 rounded-2xl ${
+                          isMe
+                            ? 'bg-primary-600 text-white rounded-br-md'
+                            : 'bg-gray-100 text-gray-900 rounded-bl-md'
                         }`}>
-                          {!isMine && (
-                            <p className="text-xs font-medium mb-0.5 opacity-70">
-                              {userNames[msg.sender_id] || 'Unknown'}
-                            </p>
-                          )}
-                          <p className="text-sm">{decrypted}</p>
-                          <div className="flex items-center gap-1 mt-1">
-                            <p className={`text-[10px] ${isMine ? 'text-white/60' : 'text-gray-400'}`}>
-                              {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                            </p>
-                            {msg.signature && (
-                              <Lock className={`h-2.5 w-2.5 ${isMine ? 'text-white/60' : 'text-gray-400'}`} />
-                            )}
-                          </div>
+                          <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                          <p className={`text-xs mt-1 ${isMe ? 'text-primary-200' : 'text-gray-400'}`}>
+                            {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </p>
                         </div>
                       </div>
                     );
@@ -303,21 +203,60 @@ export default function MessagesPage() {
                 </div>
 
                 {/* Input */}
-                <form onSubmit={handleSendMessage} className="px-4 py-3 border-t border-gray-100 flex gap-3">
-                  <input type="text" placeholder="Type an encrypted message..."
-                    value={newMessage} onChange={e => setNewMessage(e.target.value)}
-                    className="flex-1 px-4 py-2 border border-gray-300 rounded-full focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none text-sm"
-                    disabled={sending} />
-                  <button type="submit" disabled={sending || !newMessage.trim()}
-                    className="bg-primary-600 text-white p-2.5 rounded-full hover:bg-primary-700 transition disabled:opacity-50">
+                <form onSubmit={sendMessage} className="p-4 border-t border-gray-100 flex gap-2">
+                  <input
+                    type="text" value={newMessage}
+                    onChange={(e) => setNewMessage(e.target.value)}
+                    placeholder="Type a message..."
+                    className="flex-1 px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none"
+                  />
+                  <button type="submit" disabled={sendingMsg || !newMessage.trim()}
+                    className="px-4 py-2.5 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition disabled:opacity-50">
                     <Send className="h-4 w-4" />
                   </button>
                 </form>
               </>
+            ) : (
+              <div className="flex-1 flex items-center justify-center text-gray-400">
+                <div className="text-center">
+                  <MessageSquare className="h-16 w-16 mx-auto mb-4 opacity-20" />
+                  <p className="text-lg font-medium">Select a conversation</p>
+                  <p className="text-sm mt-1">Choose from existing or start a new one</p>
+                </div>
+              </div>
             )}
           </div>
         </div>
       </div>
+
+      {/* New Conversation Modal */}
+      {showNewConv && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-900">New Conversation</h3>
+              <button onClick={() => setShowNewConv(false)}
+                className="p-1 hover:bg-gray-100 rounded-lg"><X className="h-5 w-5" /></button>
+            </div>
+            <p className="text-sm text-gray-500 mb-4">Select a connection to start chatting with:</p>
+            <div className="space-y-2 max-h-60 overflow-y-auto">
+              {connections.length === 0 ? (
+                <p className="text-center text-gray-400 py-4 text-sm">
+                  {conversations.length > 0 ? 'All connections already have conversations' : 'No connections available. Connect with people first!'}
+                </p>
+              ) : connections.map(c => (
+                <button key={c.id} onClick={() => startNewConversation(c.id)}
+                  className="w-full flex items-center space-x-3 px-3 py-2.5 rounded-lg hover:bg-gray-50 transition text-left">
+                  <div className="w-8 h-8 rounded-full bg-primary-100 flex items-center justify-center">
+                    <span className="text-primary-600 font-bold text-sm">{(c.name || '?')[0].toUpperCase()}</span>
+                  </div>
+                  <span className="font-medium text-gray-900">{c.name}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

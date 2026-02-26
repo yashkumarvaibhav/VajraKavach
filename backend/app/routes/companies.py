@@ -15,6 +15,7 @@ from app.models.user import User
 from app.schemas.company import CompanyCreate, CompanyUpdate, CompanyResponse
 from app.dependencies import get_current_user, require_role
 from app.services.audit_service import create_audit_log
+from app.utils.ip import get_client_ip
 
 router = APIRouter(prefix="/api/companies", tags=["Companies"])
 
@@ -45,7 +46,7 @@ async def create_company(
         resource="company",
         resource_id=str(company.id),
         details={"name": req.name},
-        ip_address=request.client.host if request.client else None,
+        ip_address=get_client_ip(request),
     )
 
     return CompanyResponse(
@@ -198,7 +199,7 @@ async def update_company(
         resource="company",
         resource_id=str(company.id),
         details={"updated_fields": list(update_data.keys())},
-        ip_address=request.client.host if request.client else None,
+        ip_address=get_client_ip(request),
     )
 
     return CompanyResponse(
@@ -236,7 +237,7 @@ async def delete_company(
         resource="company",
         resource_id=str(company.id),
         details={"name": company.name},
-        ip_address=request.client.host if request.client else None,
+        ip_address=get_client_ip(request),
     )
 
     await db.delete(company)

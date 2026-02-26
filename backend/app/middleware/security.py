@@ -4,6 +4,7 @@ CSRF protection, security headers, rate limiting basics.
 """
 
 from fastapi import Request, Response
+from app.utils.ip import get_client_ip
 from starlette.middleware.base import BaseHTTPMiddleware
 import time
 import uuid
@@ -65,7 +66,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self.request_counts: dict = {}  # {ip: [(timestamp, count)]}
 
     async def dispatch(self, request: Request, call_next):
-        client_ip = request.client.host if request.client else "unknown"
+        client_ip = get_client_ip(request)
         now = time.time()
         window_start = now - 60
 

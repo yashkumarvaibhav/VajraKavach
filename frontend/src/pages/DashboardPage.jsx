@@ -2,11 +2,12 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
-import { BarChart3, Users, MessageSquare, FileText, Briefcase, Building2, Shield, ClipboardList, Eye } from 'lucide-react';
+import { BarChart3, Users, MessageSquare, FileText, Briefcase, Building2, Shield, ClipboardList, Eye, Megaphone } from 'lucide-react';
 
 export default function DashboardPage() {
   const { user } = useAuth();
   const [stats, setStats] = useState(null);
+  const [announcements, setAnnouncements] = useState([]);
 
   useEffect(() => {
     const fetchStats = async () => {
@@ -49,6 +50,17 @@ export default function DashboardPage() {
       }
     };
     fetchStats();
+
+    // Fetch announcements for all users
+    const fetchAnnouncements = async () => {
+      try {
+        const res = await api.get('/messages/announcements');
+        setAnnouncements(res.data || []);
+      } catch (err) {
+        console.error('Announcements error:', err);
+      }
+    };
+    fetchAnnouncements();
   }, [user]);
 
   const userCards = [
@@ -109,6 +121,37 @@ export default function DashboardPage() {
           </Link>
         ))}
       </div>
+
+      {/* Announcements Section */}
+      {announcements.length > 0 && (
+        <div className="mt-8">
+          <div className="flex items-center gap-2 mb-4">
+            <Megaphone className="h-5 w-5 text-amber-600" />
+            <h2 className="text-xl font-bold text-gray-900">Announcements</h2>
+            <span className="px-2 py-0.5 bg-amber-50 text-amber-700 text-xs rounded-full font-medium">{announcements.length}</span>
+          </div>
+          <div className="space-y-3">
+            {announcements.map(a => (
+              <div key={a.id} className="bg-white rounded-xl shadow-sm border border-amber-100 p-5">
+                <div className="flex items-start gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center flex-shrink-0 mt-0.5">
+                    <Megaphone className="h-4 w-4 text-amber-600" />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="font-semibold text-gray-900">{a.title}</h3>
+                    <p className="text-sm text-gray-600 mt-1 whitespace-pre-wrap">{a.content}</p>
+                    <div className="flex items-center gap-3 mt-2 text-xs text-gray-400">
+                      <span>By {a.sender_name || 'Admin'}</span>
+                      <span>{new Date(a.created_at).toLocaleString()}</span>
+                      <span className="px-1.5 py-0.5 bg-green-50 text-green-600 rounded text-xs">Encrypted</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

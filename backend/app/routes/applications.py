@@ -16,6 +16,7 @@ from app.models.user import User
 from app.schemas.job import ApplicationCreate, ApplicationStatusUpdate, ApplicationResponse
 from app.dependencies import get_current_user, require_role
 from app.services.audit_service import create_audit_log
+from app.utils.ip import get_client_ip
 
 router = APIRouter(prefix="/api/applications", tags=["Applications"])
 
@@ -45,6 +46,15 @@ async def _enrich_application(db: AsyncSession, app: Application) -> Application
         applicant_name = user.full_name
         applicant_email = user.email
 
+    # Get resume filename if resume attached
+    resume_filename = None
+    if app.resume_id:
+        from app.models.resume import Resume
+        resume_result = await db.execute(select(Resume).where(Resume.id == app.resume_id))
+        resume = resume_result.scalar_one_or_none()
+        if resume:
+            resume_filename = resume.original_filename
+
     return ApplicationResponse(
         id=str(app.id),
         job_id=str(app.job_id),
@@ -54,6 +64,7 @@ async def _enrich_application(db: AsyncSession, app: Application) -> Application
         applicant_name=applicant_name,
         applicant_email=applicant_email,
         resume_id=str(app.resume_id) if app.resume_id else None,
+        resume_filename=resume_filename,
         cover_note=app.cover_note,
         status=app.status.value if hasattr(app.status, 'value') else app.status,
         recruiter_notes=app.recruiter_notes,
@@ -101,7 +112,7 @@ async def apply_to_job(
         resource="application",
         resource_id=str(application.id),
         details={"job_id": req.job_id},
-        ip_address=request.client.host if request.client else None,
+        ip_address=get_client_ip(request),
     )
 
     return await _enrich_application(db, application)
@@ -132,7 +143,7 @@ async def withdraw_application(
         resource="application",
         resource_id=str(application.id),
         details={"job_id": str(application.job_id)},
-        ip_address=request.client.host if request.client else None,
+        ip_address=get_client_ip(request),
     )
 
     await db.delete(application)
@@ -215,7 +226,7 @@ async def update_application_status(
         resource="application",
         resource_id=str(application.id),
         details={"old_status": old_status, "new_status": req.status},
-        ip_address=request.client.host if request.client else None,
+        ip_address=get_client_ip(request),
     )
 
     return await _enrich_application(db, application)

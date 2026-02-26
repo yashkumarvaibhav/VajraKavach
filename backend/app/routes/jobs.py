@@ -17,6 +17,7 @@ from app.models.application import Application
 from app.schemas.job import JobCreate, JobUpdate, JobResponse
 from app.dependencies import get_current_user, require_role
 from app.services.audit_service import create_audit_log
+from app.utils.ip import get_client_ip
 
 router = APIRouter(prefix="/api/jobs", tags=["Jobs"])
 
@@ -83,7 +84,7 @@ async def create_job(
         resource="job",
         resource_id=str(job.id),
         details={"title": req.title, "company_id": req.company_id},
-        ip_address=request.client.host if request.client else None,
+        ip_address=get_client_ip(request),
     )
 
     return _job_response(job, company_name=company.name)
@@ -225,7 +226,7 @@ async def update_job(
         resource="job",
         resource_id=str(job.id),
         details={"updated_fields": list(update_data.keys())},
-        ip_address=request.client.host if request.client else None,
+        ip_address=get_client_ip(request),
     )
 
     return _job_response(job, company_name=company.name)
@@ -256,7 +257,7 @@ async def delete_job(
         resource="job",
         resource_id=str(job.id),
         details={"title": job.title},
-        ip_address=request.client.host if request.client else None,
+        ip_address=get_client_ip(request),
     )
 
     await db.delete(job)

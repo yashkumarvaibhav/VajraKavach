@@ -5,7 +5,7 @@ VajraKavach — Job Model
 import uuid
 from datetime import datetime
 from sqlalchemy import (
-    Column, String, Text, DateTime, ForeignKey, Enum as SAEnum, JSON, Date
+    Column, String, Text, DateTime, ForeignKey, Enum as SAEnum, JSON, Date, Boolean
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
@@ -54,4 +54,3 @@ class Job(Base):
         return f"<Job {self.title} @ {self.company_id}>"
 
 
-from sqlalchemy import Boolean  # noqa: already imported above

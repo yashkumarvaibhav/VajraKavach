@@ -1,13 +1,19 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
-import { Briefcase, MapPin, Clock, DollarSign, Search, Building2, Calendar, CheckCircle } from 'lucide-react';
+import { Briefcase, MapPin, Clock, DollarSign, Search, Building2, Calendar, CheckCircle, Filter, Tag } from 'lucide-react';
 
 export default function JobsPage() {
   const { user } = useAuth();
   const [jobs, setJobs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [companyFilter, setCompanyFilter] = useState('');
+  const [locationFilter, setLocationFilter] = useState('');
+  const [skillsFilter, setSkillsFilter] = useState('');
+  const [locationTypeFilter, setLocationTypeFilter] = useState('');
+  const [jobTypeFilter, setJobTypeFilter] = useState('');
+  const [showFilters, setShowFilters] = useState(false);
   const [applying, setApplying] = useState(null);
   const [coverLetter, setCoverLetter] = useState('');
   const [selectedResume, setSelectedResume] = useState('');
@@ -31,6 +37,11 @@ export default function JobsPage() {
     try {
       const params = new URLSearchParams();
       if (q) params.append('keyword', q);
+      if (companyFilter) params.append('company', companyFilter);
+      if (locationFilter) params.append('location', locationFilter);
+      if (skillsFilter) params.append('skills', skillsFilter);
+      if (locationTypeFilter) params.append('location_type', locationTypeFilter);
+      if (jobTypeFilter) params.append('job_type', jobTypeFilter);
       const res = await api.get(`/jobs/search?${params.toString()}`);
       setJobs(res.data || []);
     } catch (err) {
@@ -97,7 +108,7 @@ export default function JobsPage() {
       </div>
 
       {/* Search */}
-      <div className="flex gap-2 mb-6">
+      <div className="flex gap-2 mb-3">
         <input
           type="text" value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
@@ -106,11 +117,68 @@ export default function JobsPage() {
           maxLength={100}
           className="flex-1 px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none"
         />
+        <button onClick={() => setShowFilters(f => !f)}
+          className={`px-4 py-2.5 border rounded-lg transition flex items-center gap-1 text-sm ${showFilters ? 'bg-primary-50 border-primary-300 text-primary-700' : 'border-gray-300 text-gray-600 hover:bg-gray-50'}`}>
+          <Filter className="h-4 w-4" /> Filters
+        </button>
         <button onClick={handleSearch}
           className="px-6 py-2.5 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition flex items-center gap-1">
           <Search className="h-4 w-4" /> Search
         </button>
       </div>
+
+      {/* Advanced Filters */}
+      {showFilters && (
+        <div className="bg-gray-50 rounded-lg border border-gray-200 p-4 mb-4 space-y-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            <div>
+              <label className="text-xs font-medium text-gray-500 mb-1 block">Company</label>
+              <input type="text" value={companyFilter} onChange={(e) => setCompanyFilter(e.target.value)}
+                placeholder="e.g. Google" maxLength={100}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 outline-none" />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-gray-500 mb-1 block">Location</label>
+              <input type="text" value={locationFilter} onChange={(e) => setLocationFilter(e.target.value)}
+                placeholder="e.g. Delhi" maxLength={100}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 outline-none" />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-gray-500 mb-1 block">Skills</label>
+              <input type="text" value={skillsFilter} onChange={(e) => setSkillsFilter(e.target.value)}
+                placeholder="e.g. Python, React" maxLength={200}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 outline-none" />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-gray-500 mb-1 block">Location Type</label>
+              <select value={locationTypeFilter} onChange={(e) => setLocationTypeFilter(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 outline-none bg-white">
+                <option value="">All</option>
+                <option value="remote">Remote</option>
+                <option value="onsite">On-site</option>
+                <option value="hybrid">Hybrid</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-gray-500 mb-1 block">Job Type</label>
+              <select value={jobTypeFilter} onChange={(e) => setJobTypeFilter(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 outline-none bg-white">
+                <option value="">All</option>
+                <option value="full_time">Full Time</option>
+                <option value="part_time">Part Time</option>
+                <option value="internship">Internship</option>
+                <option value="contract">Contract</option>
+              </select>
+            </div>
+            <div className="flex items-end">
+              <button onClick={() => { setCompanyFilter(''); setLocationFilter(''); setSkillsFilter(''); setLocationTypeFilter(''); setJobTypeFilter(''); }}
+                className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-white transition text-gray-600">
+                Clear Filters
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {message && <div className="bg-green-50 text-green-700 p-3 rounded-lg mb-4 text-sm">{message}</div>}
 

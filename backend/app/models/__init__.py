@@ -9,6 +9,8 @@ from app.models.resume import Resume
 from app.models.message import Message, Conversation
 from app.models.announcement import Announcement
 from app.models.audit import AuditLog
+from app.models.audit_block import AuditBlock
+from app.models.report import Report
 
 __all__ = [
     "User",
@@ -21,4 +23,5 @@ __all__ = [
     "Message",
     "Conversation",
     "AuditLog",
+    "Report",
 ]

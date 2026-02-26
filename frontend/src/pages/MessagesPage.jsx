@@ -2,8 +2,11 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
-import { MessageSquare, Send, Plus, ArrowLeft, Users, Trash2, X, UserPlus } from 'lucide-react';
+import { MessageSquare, Send, Plus, ArrowLeft, Users, Trash2, X, UserPlus, Lock } from 'lucide-react';
 import { toIST } from '../utils/time';
+import { encryptMessage, decryptMessage, isEncryptedPayload } from '../utils/crypto';
+
+import ReportButton from '../components/ReportButton';
 
 export default function MessagesPage() {
   const { user } = useAuth();
@@ -23,6 +26,11 @@ export default function MessagesPage() {
   const messagesEndRef = useRef(null);
   const pollRef = useRef(null);
 
+  // E2E encryption state
+  const privateKeyRef = useRef(null);
+  const myPublicKeyRef = useRef(null);
+  const publicKeyCacheRef = useRef({}); // { recipientId: publicKeyPem }
+
   const fetchConversations = useCallback(async () => {
     try {
       const res = await api.get('/messages/conversations');
@@ -31,6 +39,37 @@ export default function MessagesPage() {
       console.error('Failed to fetch conversations:', err);
     } finally {
       setLoading(false);
+    }
+  }, []);
+
+  // Fetch user's own private key and public key for E2E encryption
+  useEffect(() => {
+    const fetchKeys = async () => {
+      try {
+        const [privRes, pubRes] = await Promise.all([
+          api.get('/messages/my-private-key'),
+          api.get(`/messages/user/${user?.id}/public-key`),
+        ]);
+        privateKeyRef.current = privRes.data.private_key;
+        myPublicKeyRef.current = pubRes.data.public_key;
+      } catch (err) {
+        console.warn('Could not fetch E2E keys:', err);
+      }
+    };
+    if (user?.id) fetchKeys();
+  }, [user?.id]);
+
+  // Helper: get recipient's public key (cached)
+  const getRecipientPublicKey = useCallback(async (recipientId) => {
+    if (publicKeyCacheRef.current[recipientId]) {
+      return publicKeyCacheRef.current[recipientId];
+    }
+    try {
+      const res = await api.get(`/messages/user/${recipientId}/public-key`);
+      publicKeyCacheRef.current[recipientId] = res.data.public_key;
+      return res.data.public_key;
+    } catch {
+      return null;
     }
   }, []);
 
@@ -63,7 +102,23 @@ export default function MessagesPage() {
   const fetchMessages = useCallback(async (convId) => {
     try {
       const res = await api.get(`/messages/conversations/${convId}`);
-      setMessages(res.data || []);
+      const msgs = res.data || [];
+      // Attempt to decrypt E2E messages client-side
+      const decrypted = await Promise.all(
+        msgs.map(async (m) => {
+          if (m.ciphertext && isEncryptedPayload(m.ciphertext) && privateKeyRef.current) {
+            try {
+              const isSender = m.sender_id === String(user?.id);
+              const plaintext = await decryptMessage(m.ciphertext, privateKeyRef.current, isSender);
+              return { ...m, ciphertext: plaintext, _e2e: true };
+            } catch {
+              return { ...m, _e2e: true, _decryptFailed: true };
+            }
+          }
+          return m;
+        })
+      );
+      setMessages(decrypted);
       setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
     } catch (err) {
       console.error('Failed to fetch messages:', err);
@@ -84,9 +139,21 @@ export default function MessagesPage() {
     if (!newMessage.trim() || !activeConv) return;
     setSendingMsg(true);
     try {
-      const payload = {
-        ciphertext: newMessage.trim(),
-      };
+      let ciphertext = newMessage.trim();
+
+      // E2E encrypt for 1-to-1 conversations
+      if (!activeConv.is_group && activeConv.partner_id) {
+        const pubKey = await getRecipientPublicKey(activeConv.partner_id);
+        if (pubKey) {
+          try {
+            ciphertext = await encryptMessage(newMessage.trim(), pubKey, myPublicKeyRef.current);
+          } catch (encErr) {
+            console.warn('E2E encryption failed, sending plaintext:', encErr);
+          }
+        }
+      }
+
+      const payload = { ciphertext };
       if (activeConv.is_group) {
         payload.conversation_id = activeConv.id;
       } else {
@@ -321,10 +388,17 @@ export default function MessagesPage() {
                     </p>
                   </div>
                   {!activeConv.is_group && (
-                    <button onClick={() => deleteConversation(activeConv.id)}
-                      className="p-2 hover:bg-red-50 rounded-lg transition text-red-400 hover:text-red-600" title="Delete conversation">
-                      <Trash2 className="h-4 w-4" />
-                    </button>
+                    <div className="flex items-center gap-1">
+                      <ReportButton
+                        reportedUserId={activeConv.partner_id}
+                        resourceType="user"
+                        className="p-2 hover:bg-red-50 rounded-lg transition"
+                      />
+                      <button onClick={() => deleteConversation(activeConv.id)}
+                        className="p-2 hover:bg-red-50 rounded-lg transition text-red-400 hover:text-red-600" title="Delete conversation">
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
                   )}
                 </div>
 
@@ -361,9 +435,16 @@ export default function MessagesPage() {
                             {activeConv.is_group && !isMe && msg.sender_name && (
                               <p className={`text-xs font-semibold mb-0.5 ${isMe ? 'text-primary-200' : 'text-blue-500'}`}>{msg.sender_name}</p>
                             )}
-                            <p className="text-sm whitespace-pre-wrap">{msg.ciphertext || msg.content}</p>
-                            <p className={`text-xs mt-1 ${isMe ? 'text-primary-200' : 'text-gray-400'}`}>
+                            <p className="text-sm whitespace-pre-wrap">
+                              {msg._decryptFailed ? (
+                                <span className="italic text-yellow-300">[Encrypted — unable to decrypt]</span>
+                              ) : (
+                                msg.ciphertext || msg.content
+                              )}
+                            </p>
+                            <p className={`text-xs mt-1 flex items-center gap-1 ${isMe ? 'text-primary-200' : 'text-gray-400'}`}>
                               {toIST(msg.created_at)}
+                              {msg._e2e && <Lock className="h-3 w-3 inline" title="End-to-end encrypted" />}
                             </p>
                           </div>
                         )}

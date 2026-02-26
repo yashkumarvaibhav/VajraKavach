@@ -35,6 +35,8 @@ class User(Base):
 
     # PKI — user's public key for E2E encryption / message signing
     public_key = Column(Text, nullable=True)
+    # PKI — user's private key (Fernet-encrypted) for E2E decryption
+    encrypted_private_key = Column(Text, nullable=True)
 
     # Account state
     is_active = Column(Boolean, default=True)

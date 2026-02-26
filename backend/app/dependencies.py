@@ -3,18 +3,20 @@ VajraKavach — Dependency Injection
 Auth dependency to extract and validate the current user from JWT.
 """
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.database import get_db
 from app.models.user import User
 from app.services.auth_service import decode_token
+from app.utils.ip import get_client_ip
 
 security = HTTPBearer()
 
 
 async def get_current_user(
+    request: Request,
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: AsyncSession = Depends(get_db),
 ) -> User:
@@ -31,6 +33,16 @@ async def get_current_user(
     user_id = payload.get("sub")
     if not user_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token payload")
+
+    # IP binding: verify request originates from the same IP that created the session
+    token_ip = payload.get("ip")
+    if token_ip:
+        request_ip = get_client_ip(request)
+        if request_ip != token_ip:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Session IP mismatch. Please log in again.",
+            )
 
     # Ensure TOTP was verified for this session
     totp_verified = payload.get("totp_verified", False)

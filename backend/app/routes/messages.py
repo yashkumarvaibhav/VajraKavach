@@ -333,6 +333,28 @@ async def get_user_public_key(
     return {"user_id": str(user.id), "public_key": user.public_key}
 
 
+@router.get("/my-private-key")
+async def get_my_private_key(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Get the current user's own private key (decrypted) for E2E decryption.
+    The private key is stored server-side encrypted with Fernet (AES)."""
+    if not current_user.encrypted_private_key:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No private key found. Key was generated at registration.",
+        )
+    try:
+        decrypted = decrypt_data(current_user.encrypted_private_key.encode("utf-8"))
+        return {"private_key": decrypted.decode("utf-8")}
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to decrypt private key",
+        )
+
+
 @router.delete("/{message_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_message(
     message_id: str,

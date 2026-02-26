@@ -25,6 +25,7 @@ from app.services.totp_service import (
     generate_totp_secret, get_totp_uri, generate_qr_code_base64, verify_totp,
 )
 from app.services.pki_service import generate_rsa_key_pair
+from app.services.encryption_service import encrypt_data
 from app.services.audit_service import create_audit_log
 from app.dependencies import get_current_user_pre_totp, get_current_user
 from app.utils.ip import get_client_ip
@@ -55,6 +56,8 @@ async def register(
     hashed_pw = hash_password(req.password)
     totp_secret = generate_totp_secret()
     private_key_pem, public_key_pem = generate_rsa_key_pair()
+    # Encrypt private key with Fernet (AES) before storing
+    encrypted_priv = encrypt_data(private_key_pem.encode("utf-8")).decode("utf-8")
 
     user = User(
         id=uuid.uuid4(),
@@ -66,6 +69,7 @@ async def register(
         totp_secret=totp_secret,
         totp_verified=False,
         public_key=public_key_pem,
+        encrypted_private_key=encrypted_priv,
     )
     db.add(user)
 
@@ -155,7 +159,8 @@ async def login(
     if not user.is_active or user.is_suspended:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account is suspended or deactivated")
 
-    token_data = {"sub": str(user.id), "email": user.email, "role": user.role.value, "totp_verified": False}
+    client_ip = get_client_ip(request)
+    token_data = {"sub": str(user.id), "email": user.email, "role": user.role.value, "totp_verified": False, "ip": client_ip}
     access_token = create_access_token(token_data)
     refresh_token = create_refresh_token(token_data)
 
@@ -214,11 +219,13 @@ async def verify_totp_endpoint(
     if not current_user.totp_verified:
         current_user.totp_verified = True
 
+    client_ip = get_client_ip(request)
     token_data = {
         "sub": str(current_user.id),
         "email": current_user.email,
         "role": current_user.role.value,
         "totp_verified": True,
+        "ip": client_ip,
     }
     access_token = create_access_token(token_data)
     refresh_token = create_refresh_token(token_data)
@@ -258,6 +265,7 @@ async def refresh_token(req: RefreshTokenRequest, db: AsyncSession = Depends(get
         "email": user.email,
         "role": user.role.value,
         "totp_verified": payload.get("totp_verified", False),
+        "ip": payload.get("ip"),
     }
 
     return TokenResponse(

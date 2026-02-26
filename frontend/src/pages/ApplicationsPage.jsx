@@ -5,10 +5,10 @@ import { ClipboardList, Building2, Calendar, FileText, XCircle } from 'lucide-re
 import { toISTDate } from '../utils/time';
 
 const STATUS_COLORS = {
-  pending: 'bg-yellow-50 text-yellow-700',
+  applied: 'bg-yellow-50 text-yellow-700',
   reviewed: 'bg-blue-50 text-blue-700',
-  shortlisted: 'bg-indigo-50 text-indigo-700',
-  accepted: 'bg-green-50 text-green-700',
+  interviewed: 'bg-indigo-50 text-indigo-700',
+  offer: 'bg-green-50 text-green-700',
   rejected: 'bg-red-50 text-red-700',
 };
 

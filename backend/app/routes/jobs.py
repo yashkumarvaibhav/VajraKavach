@@ -6,7 +6,7 @@ Job posting CRUD, search, and recruiter management.
 import uuid
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, or_, and_, func
+from sqlalchemy import select, or_, and_, func, String
 from typing import Optional, List
 
 from app.database import get_db
@@ -165,6 +165,13 @@ async def search_jobs(
 
     if job_type:
         query = query.where(Job.job_type == job_type)
+
+    if skills:
+        skill_list = [s.strip().lower() for s in skills.split(",") if s.strip()]
+        for skill in skill_list:
+            query = query.where(
+                func.lower(func.cast(Job.required_skills, String)).contains(skill)
+            )
 
     offset = (page - 1) * page_size
     query = query.order_by(Job.created_at.desc()).offset(offset).limit(page_size)

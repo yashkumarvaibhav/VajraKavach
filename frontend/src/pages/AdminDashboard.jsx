@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
 import VirtualKeyboard from '../components/VirtualKeyboard';
-import { Shield, Users, BarChart3, FileText, AlertTriangle, UserX, UserCheck, Search, ChevronLeft, ChevronRight, Briefcase, Megaphone, Trash2, Download } from 'lucide-react';
+import { Shield, Users, BarChart3, FileText, AlertTriangle, UserX, UserCheck, Search, ChevronLeft, ChevronRight, Briefcase, Megaphone, Trash2, Download, Flag } from 'lucide-react';
 import { toISTDate, toISTDateTime } from '../utils/time';
 
 export default function AdminDashboard() {
@@ -24,6 +24,11 @@ export default function AdminDashboard() {
   const [announcementContent, setAnnouncementContent] = useState('');
   const [sendingAnnouncement, setSendingAnnouncement] = useState(false);
   const [allResumes, setAllResumes] = useState([]);
+  const [reports, setReports] = useState([]);
+  const [reportStatusFilter, setReportStatusFilter] = useState('');
+  const [blocks, setBlocks] = useState([]);
+  const [blockchainStatus, setBlockchainStatus] = useState(null);
+  const [mining, setMining] = useState(false);
 
   const verify = async () => {
     setVerifyError('');
@@ -70,10 +75,11 @@ export default function AdminDashboard() {
   };
 
   useEffect(() => {
-    if (verified && tab === 'audit') fetchAuditLogs(auditPage);
+    if (verified && tab === 'audit') { fetchAuditLogs(auditPage); fetchBlockchain(); }
     if (verified && tab === 'jobs') fetchAdminJobs();
     if (verified && tab === 'announcements') fetchAnnouncements();
     if (verified && tab === 'resumes') fetchResumes();
+    if (verified && tab === 'reports') fetchReports();
   }, [verified, tab]);
 
   const fetchResumes = async () => {
@@ -82,6 +88,51 @@ export default function AdminDashboard() {
       setAllResumes(res.data || []);
     } catch (err) {
       console.error('Admin resumes error:', err);
+    }
+  };
+
+  const fetchReports = async (statusFilter) => {
+    try {
+      const params = statusFilter ? `?status_filter=${statusFilter}` : '';
+      const res = await api.get(`/reports/admin/all${params}`);
+      setReports(res.data || []);
+    } catch (err) {
+      console.error('Reports error:', err);
+    }
+  };
+
+  const updateReportStatus = async (reportId, newStatus, notes) => {
+    try {
+      await api.put(`/reports/admin/${reportId}`, { status: newStatus, admin_notes: notes || null });
+      fetchReports(reportStatusFilter);
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Failed to update report');
+    }
+  };
+
+  const fetchBlockchain = async () => {
+    try {
+      const [blocksRes, verifyRes] = await Promise.all([
+        api.get('/admin/blockchain/blocks'),
+        api.get('/admin/blockchain/verify'),
+      ]);
+      setBlocks(blocksRes.data || []);
+      setBlockchainStatus(verifyRes.data);
+    } catch (err) {
+      console.error('Blockchain error:', err);
+    }
+  };
+
+  const mineBlock = async () => {
+    setMining(true);
+    try {
+      const res = await api.post('/admin/blockchain/mine');
+      alert(res.data.message);
+      fetchBlockchain();
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Mining failed');
+    } finally {
+      setMining(false);
     }
   };
 
@@ -252,6 +303,7 @@ export default function AdminDashboard() {
           { key: 'jobs', label: 'Jobs', icon: Briefcase },
           { key: 'resumes', label: 'Resumes', icon: Download },
           { key: 'announcements', label: 'Announcements', icon: Megaphone },
+          { key: 'reports', label: 'Reports', icon: Flag },
           { key: 'audit', label: 'Audit Logs', icon: FileText },
         ].map(t => (
           <button key={t.key} onClick={() => setTab(t.key)}
@@ -544,6 +596,89 @@ export default function AdminDashboard() {
         </div>
       )}
 
+      {/* Reports */}
+      {tab === 'reports' && (
+        <div>
+          <div className="flex gap-2 mb-4">
+            <select value={reportStatusFilter} onChange={(e) => { setReportStatusFilter(e.target.value); fetchReports(e.target.value); }}
+              className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 outline-none bg-white">
+              <option value="">All Statuses</option>
+              <option value="pending">Pending</option>
+              <option value="reviewed">Reviewed</option>
+              <option value="resolved">Resolved</option>
+              <option value="dismissed">Dismissed</option>
+            </select>
+          </div>
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+            <table className="w-full">
+              <thead>
+                <tr className="bg-gray-50 border-b border-gray-100">
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Date</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Reporter</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Reported User</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Category</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Description</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Status</th>
+                  <th className="text-right px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-50">
+                {reports.map(r => (
+                  <tr key={r.id} className="hover:bg-gray-50">
+                    <td className="px-4 py-3 text-sm text-gray-600">{toISTDateTime(r.created_at)}</td>
+                    <td className="px-4 py-3 text-sm text-gray-900">{r.reporter_name || 'Unknown'}</td>
+                    <td className="px-4 py-3 text-sm text-gray-900">{r.reported_user_name || r.resource_type || '—'}</td>
+                    <td className="px-4 py-3">
+                      <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${
+                        r.category === 'harassment' || r.category === 'fraud' ? 'bg-red-50 text-red-700' :
+                        r.category === 'spam' ? 'bg-yellow-50 text-yellow-700' :
+                        'bg-gray-100 text-gray-700'
+                      }`}>
+                        {r.category}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-600 max-w-xs truncate">{r.description}</td>
+                    <td className="px-4 py-3">
+                      <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${
+                        r.status === 'pending' ? 'bg-yellow-50 text-yellow-700' :
+                        r.status === 'reviewed' ? 'bg-blue-50 text-blue-700' :
+                        r.status === 'resolved' ? 'bg-green-50 text-green-700' :
+                        'bg-gray-100 text-gray-700'
+                      }`}>
+                        {r.status}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      {r.status === 'pending' && (
+                        <div className="flex gap-1 justify-end">
+                          <button onClick={() => updateReportStatus(r.id, 'reviewed')}
+                            className="px-2 py-1 text-xs bg-blue-50 text-blue-700 rounded hover:bg-blue-100">Review</button>
+                          <button onClick={() => updateReportStatus(r.id, 'resolved')}
+                            className="px-2 py-1 text-xs bg-green-50 text-green-700 rounded hover:bg-green-100">Resolve</button>
+                          <button onClick={() => updateReportStatus(r.id, 'dismissed')}
+                            className="px-2 py-1 text-xs bg-gray-100 text-gray-600 rounded hover:bg-gray-200">Dismiss</button>
+                        </div>
+                      )}
+                      {r.status === 'reviewed' && (
+                        <div className="flex gap-1 justify-end">
+                          <button onClick={() => updateReportStatus(r.id, 'resolved')}
+                            className="px-2 py-1 text-xs bg-green-50 text-green-700 rounded hover:bg-green-100">Resolve</button>
+                          <button onClick={() => updateReportStatus(r.id, 'dismissed')}
+                            className="px-2 py-1 text-xs bg-gray-100 text-gray-600 rounded hover:bg-gray-200">Dismiss</button>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+                {reports.length === 0 && (
+                  <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400">No reports found</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {/* Audit Logs */}
       {tab === 'audit' && (
         <div>
@@ -588,6 +723,46 @@ export default function AdminDashboard() {
               className="flex items-center gap-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50">
               Next <ChevronRight className="h-4 w-4" />
             </button>
+          </div>
+
+          {/* Blockchain Section */}
+          <div className="mt-8">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-900">Blockchain Audit Blocks</h3>
+              <div className="flex items-center gap-3">
+                {blockchainStatus && (
+                  <span className={`px-3 py-1 text-xs font-medium rounded-full ${
+                    blockchainStatus.valid ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
+                  }`}>
+                    Chain: {blockchainStatus.valid ? 'Valid' : 'Tampered'} ({blockchainStatus.total_blocks} blocks)
+                  </span>
+                )}
+                <button onClick={mineBlock} disabled={mining}
+                  className="px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition disabled:opacity-50">
+                  {mining ? 'Mining...' : 'Mine New Block'}
+                </button>
+              </div>
+            </div>
+            {blocks.length > 0 ? (
+              <div className="space-y-2">
+                {blocks.map(b => (
+                  <div key={b.id} className="bg-white rounded-lg border border-gray-100 p-4 text-sm">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="font-semibold text-indigo-700">Block #{b.block_number}</span>
+                      <span className="text-xs text-gray-400">{toISTDateTime(b.timestamp)}</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 text-xs text-gray-600">
+                      <div><span className="font-medium">Hash:</span> <span className="font-mono">{b.block_hash.slice(0, 16)}...</span></div>
+                      <div><span className="font-medium">Prev:</span> <span className="font-mono">{b.previous_block_hash.slice(0, 16)}...</span></div>
+                      <div><span className="font-medium">Merkle:</span> <span className="font-mono">{b.merkle_root.slice(0, 16)}...</span></div>
+                      <div><span className="font-medium">Nonce:</span> {b.nonce} | <span className="font-medium">Entries:</span> {b.entry_count}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-gray-400 text-center py-4">No blocks mined yet. Click "Mine New Block" to create one.</p>
+            )}
           </div>
         </div>
       )}

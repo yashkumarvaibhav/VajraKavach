@@ -91,3 +91,15 @@ class SetupVerifyRequest(BaseModel):
     """Verify TOTP during registration flow (before first login)."""
     email: EmailStr
     token: str = Field(..., min_length=6, max_length=6)
+
+
+class ForgotPasswordRequest(BaseModel):
+    """Reset password using email + TOTP verification."""
+    email: EmailStr
+    totp_token: str = Field(..., min_length=6, max_length=6)
+    new_password: str = Field(..., min_length=8, max_length=16)
+
+    @field_validator("new_password")
+    @classmethod
+    def check_password_strength(cls, v):
+        return validate_strong_password(v)

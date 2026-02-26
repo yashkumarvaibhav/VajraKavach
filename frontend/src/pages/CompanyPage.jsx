@@ -24,7 +24,7 @@ export default function CompanyPage() {
 
   const [jobForm, setJobForm] = useState({
     title: '', description: '', location: '', salary_min: '', salary_max: '',
-    salary_currency: 'INR', job_type: 'full-time', application_deadline: '',
+    salary_currency: 'INR', job_type: 'full_time', location_type: 'onsite', application_deadline: '',
   });
   const [postingJobFor, setPostingJobFor] = useState(null);
 
@@ -73,7 +73,12 @@ export default function CompanyPage() {
     e.preventDefault();
     setError('');
     try {
-      await api.post('/companies/', companyForm);
+      // Auto-prepend https:// if no protocol present
+      const submitForm = { ...companyForm };
+      if (submitForm.website && !submitForm.website.match(/^https?:\/\//i)) {
+        submitForm.website = 'https://' + submitForm.website;
+      }
+      await api.post('/companies/', submitForm);
       setShowCreate(false);
       setCompanyForm({ name: '', description: '', website: '', location: '', industry: '', size: '' });
       fetchMyCompanies();
@@ -91,13 +96,13 @@ export default function CompanyPage() {
       await api.post('/jobs/', {
         ...jobForm,
         company_id: postingJobFor,
-        salary_min: jobForm.salary_min ? Number(jobForm.salary_min) : null,
-        salary_max: jobForm.salary_max ? Number(jobForm.salary_max) : null,
+        salary_min: jobForm.salary_min || null,
+        salary_max: jobForm.salary_max || null,
       });
       setPostingJobFor(null);
       setJobForm({
         title: '', description: '', location: '', salary_min: '', salary_max: '',
-        salary_currency: 'INR', job_type: 'full-time', application_deadline: '',
+        salary_currency: 'INR', job_type: 'full_time', location_type: 'onsite', application_deadline: '',
       });
       if (tab === 'jobs') fetchMyJobs();
     } catch (err) {
@@ -200,8 +205,8 @@ export default function CompanyPage() {
                 </div>
                 <div>
                   <label className="text-sm font-medium text-gray-700 mb-1 block">Website <span className="text-red-500">*</span></label>
-                  <input type="url" value={companyForm.website} onChange={(e) => setCompanyForm(f => ({ ...f, website: e.target.value }))}
-                    required className={inputClass} placeholder="https://acme.com" />
+                  <input type="text" value={companyForm.website} onChange={(e) => setCompanyForm(f => ({ ...f, website: e.target.value }))}
+                    required className={inputClass} placeholder="acme.com or https://acme.com" />
                 </div>
                 <div>
                   <label className="text-sm font-medium text-gray-700 mb-1 block">Industry</label>
@@ -339,15 +344,24 @@ export default function CompanyPage() {
                     className={inputClass} placeholder="100000" min="0" />
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-3 gap-3">
                 <div>
                   <label className="text-sm font-medium text-gray-700 mb-1 block">Job Type</label>
                   <select value={jobForm.job_type} onChange={(e) => setJobForm(f => ({ ...f, job_type: e.target.value }))}
                     className={inputClass}>
-                    <option value="full-time">Full Time</option>
-                    <option value="part-time">Part Time</option>
+                    <option value="full_time">Full Time</option>
+                    <option value="part_time">Part Time</option>
                     <option value="contract">Contract</option>
                     <option value="internship">Internship</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-gray-700 mb-1 block">Location Type</label>
+                  <select value={jobForm.location_type} onChange={(e) => setJobForm(f => ({ ...f, location_type: e.target.value }))}
+                    className={inputClass}>
+                    <option value="onsite">On-site</option>
+                    <option value="remote">Remote</option>
+                    <option value="hybrid">Hybrid</option>
                   </select>
                 </div>
                 <div>

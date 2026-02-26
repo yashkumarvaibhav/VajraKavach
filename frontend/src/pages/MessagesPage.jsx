@@ -33,7 +33,7 @@ export default function MessagesPage() {
 
   const fetchMessages = useCallback(async (convId) => {
     try {
-      const res = await api.get(`/messages/conversations/${convId}/messages`);
+      const res = await api.get(`/messages/conversations/${convId}`);
       setMessages(res.data || []);
       setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
     } catch (err) {
@@ -55,9 +55,10 @@ export default function MessagesPage() {
     if (!newMessage.trim() || !activeConv) return;
     setSendingMsg(true);
     try {
-      await api.post('/messages/send', {
+      await api.post('/messages/', {
         conversation_id: activeConv.id,
-        content: newMessage.trim(),
+        recipient_id: activeConv.partner_id,
+        ciphertext: newMessage.trim(),
       });
       setNewMessage('');
       fetchMessages(activeConv.id);
@@ -70,9 +71,9 @@ export default function MessagesPage() {
 
   const startNewConversation = async (partnerId) => {
     try {
-      const res = await api.post('/messages/send', {
+      const res = await api.post('/messages/', {
         recipient_id: partnerId,
-        content: 'Hello!',
+        ciphertext: 'Hello!',
       });
       setShowNewConv(false);
       await fetchConversations();
@@ -191,7 +192,7 @@ export default function MessagesPage() {
                             ? 'bg-primary-600 text-white rounded-br-md'
                             : 'bg-gray-100 text-gray-900 rounded-bl-md'
                         }`}>
-                          <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                          <p className="text-sm whitespace-pre-wrap">{msg.ciphertext || msg.content}</p>
                           <p className={`text-xs mt-1 ${isMe ? 'text-primary-200' : 'text-gray-400'}`}>
                             {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                           </p>

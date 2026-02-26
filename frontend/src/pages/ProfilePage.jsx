@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
-import { User, Save, Plus, Trash2, GraduationCap, Briefcase, Globe, Lock, Users } from 'lucide-react';
+import { User, Save, Plus, Trash2, GraduationCap, Briefcase, Globe, Lock, Users, Upload } from 'lucide-react';
 
 const PRIVACY_OPTIONS = [
   { value: 'public', label: 'Public', icon: Globe },
@@ -49,7 +49,7 @@ export default function ProfilePage() {
   useEffect(() => {
     const fetchProfile = async () => {
       try {
-        const res = await api.get(`/users/${user?.id}/profile`);
+        const res = await api.get('/users/me/profile');
         const data = res.data || {};
         setProfile({
           headline: data.headline || '',
@@ -84,13 +84,12 @@ export default function ProfilePage() {
       const skills = profile.skills
         ? profile.skills.split(',').map(s => s.trim()).filter(Boolean)
         : [];
-      await api.put('/users/profile', {
+      await api.put('/users/me/profile', {
         headline: profile.headline,
         bio: profile.bio,
         location: profile.location,
         website: profile.website,
         skills,
-        profile_picture_url: profile.profile_picture_url,
         privacy_settings: privacy,
       });
       showMsg('Profile saved!');
@@ -104,7 +103,27 @@ export default function ProfilePage() {
   const saveEducation = async () => {
     setSaving(prev => ({ ...prev, education: true }));
     try {
-      await api.put('/users/profile', { education });
+      // Validate education entries
+      for (const edu of education) {
+        if (edu.start_year && edu.end_year && Number(edu.start_year) > Number(edu.end_year)) {
+          showMsg('Start year cannot be later than end year in education entries', true);
+          setSaving(prev => ({ ...prev, education: false }));
+          return;
+        }
+        const grade = parseFloat(edu.grade);
+        const maxGrade = parseFloat(edu.max_grade);
+        if (edu.grade && grade < 0) {
+          showMsg('Grade cannot be negative', true);
+          setSaving(prev => ({ ...prev, education: false }));
+          return;
+        }
+        if (edu.grade && edu.max_grade && grade > maxGrade) {
+          showMsg('Grade cannot exceed max grade', true);
+          setSaving(prev => ({ ...prev, education: false }));
+          return;
+        }
+      }
+      await api.put('/users/me/profile', { education });
       showMsg('Education saved!');
     } catch (err) {
       showMsg(err.response?.data?.detail || 'Failed to save education', true);
@@ -123,7 +142,7 @@ export default function ProfilePage() {
     }
     setSaving(prev => ({ ...prev, experience: true }));
     try {
-      await api.put('/users/profile', { experience });
+      await api.put('/users/me/profile', { experience });
       showMsg('Experience saved!');
     } catch (err) {
       showMsg(err.response?.data?.detail || 'Failed to save experience', true);
@@ -239,10 +258,32 @@ export default function ProfilePage() {
           </div>
 
           <div>
-            <label className="text-sm font-medium text-gray-700 mb-1 block">Profile Picture URL</label>
-            <input type="url" value={profile.profile_picture_url}
-              onChange={(e) => setProfile(p => ({ ...p, profile_picture_url: e.target.value }))}
-              className={inputClass} placeholder="https://example.com/photo.jpg" />
+            <label className="text-sm font-medium text-gray-700 mb-1 block">Profile Picture</label>
+            {profile.profile_picture_url && (
+              <div className="mb-2 flex items-center gap-3">
+                <img src={profile.profile_picture_url} alt="Profile" className="w-16 h-16 rounded-full object-cover border-2 border-gray-200" />
+                <span className="text-xs text-green-600">Current photo</span>
+              </div>
+            )}
+            <label className="flex items-center gap-2 px-4 py-2.5 border border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50 transition text-sm text-gray-600">
+              <Upload className="h-4 w-4" />
+              Upload Profile Picture
+              <input type="file" className="hidden" accept="image/*" onChange={async (e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                if (file.size > 2 * 1024 * 1024) { showMsg('Image too large. Max 2MB.', true); return; }
+                const formData = new FormData();
+                formData.append('file', file);
+                try {
+                  const res = await api.post('/users/me/profile-picture', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+                  setProfile(p => ({ ...p, profile_picture_url: res.data?.url || res.data?.profile_picture_url || '' }));
+                  showMsg('Profile picture uploaded!');
+                } catch (err) {
+                  showMsg(err.response?.data?.detail || 'Upload failed', true);
+                }
+              }} />
+            </label>
+            <p className="text-xs text-gray-400 mt-1">JPG, PNG, or GIF. Max 2MB.</p>
           </div>
         </div>
       </div>
@@ -302,15 +343,24 @@ export default function ProfilePage() {
                     <label className="text-xs text-gray-500">End Year</label>
                     <input type="number" value={edu.end_year || ''} onChange={(e) => updateEducation(idx, 'end_year', e.target.value)}
                       className={inputClass} placeholder="2024" min="1950" max="2035" />
+                    {edu.start_year && edu.end_year && Number(edu.start_year) > Number(edu.end_year) && (
+                      <p className="text-xs text-red-500 mt-1">Start year cannot be later than end year</p>
+                    )}
                   </div>
                   <div>
                     <label className="text-xs text-gray-500">Grade / GPA</label>
-                    <input type="text" value={edu.grade || ''} onChange={(e) => updateEducation(idx, 'grade', e.target.value)}
+                    <input type="number" step="0.01" min="0" value={edu.grade || ''} onChange={(e) => updateEducation(idx, 'grade', e.target.value)}
                       className={inputClass} placeholder="9.2" />
+                    {edu.grade && parseFloat(edu.grade) < 0 && (
+                      <p className="text-xs text-red-500 mt-1">Grade cannot be negative</p>
+                    )}
+                    {edu.grade && edu.max_grade && parseFloat(edu.grade) > parseFloat(edu.max_grade) && (
+                      <p className="text-xs text-red-500 mt-1">Grade exceeds max grade</p>
+                    )}
                   </div>
                   <div>
                     <label className="text-xs text-gray-500">Max Grade / Scale</label>
-                    <input type="text" value={edu.max_grade || ''} onChange={(e) => updateEducation(idx, 'max_grade', e.target.value)}
+                    <input type="number" step="0.01" min="0" value={edu.max_grade || ''} onChange={(e) => updateEducation(idx, 'max_grade', e.target.value)}
                       className={inputClass} placeholder="10" />
                   </div>
                 </div>

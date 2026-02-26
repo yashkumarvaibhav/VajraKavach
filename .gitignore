@@ -32,3 +32,8 @@ backend/certs/*.pem
 # OS
 .DS_Store
 Thumbs.db
+
+# Server PID files & logs
+.backend.pid
+.frontend.pid
+logs/

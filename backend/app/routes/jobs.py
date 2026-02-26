@@ -94,7 +94,7 @@ async def search_jobs(
     current_user: User = Depends(get_current_user),
 ):
     """Search jobs with filters."""
-    query = select(Job).where(Job.is_active == True)
+    query = select(Job, Company.name.label("company_name")).join(Company, Job.company_id == Company.id).where(Job.is_active == True)
 
     if keyword:
         query = query.where(
@@ -103,6 +103,9 @@ async def search_jobs(
                 Job.description.ilike(f"%{keyword}%"),
             )
         )
+
+    if company:
+        query = query.where(Company.name.ilike(f"%{company}%"))
 
     if location:
         query = query.where(Job.location.ilike(f"%{location}%"))
@@ -115,15 +118,16 @@ async def search_jobs(
 
     # Pagination
     offset = (page - 1) * page_size
-    query = query.offset(offset).limit(page_size)
+    query = query.order_by(Job.created_at.desc()).offset(offset).limit(page_size)
 
     result = await db.execute(query)
-    jobs = result.scalars().all()
+    rows = result.all()
 
     return [
         JobResponse(
             id=str(j.id),
             company_id=str(j.company_id),
+            company_name=company_name,
             title=j.title,
             description=j.description,
             required_skills=j.required_skills,
@@ -136,7 +140,7 @@ async def search_jobs(
             is_active=j.is_active,
             created_at=j.created_at,
         )
-        for j in jobs
+        for j, company_name in rows
     ]
 
 

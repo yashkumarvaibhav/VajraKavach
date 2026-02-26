@@ -224,3 +224,93 @@ All timestamps are in **Indian Standard Time (IST, UTC+5:30)**.
 | Backend profile-picture upload/serve | Done |
 
 **Next Steps:** Browser-test the full flow, admin login walkthrough, resume encryption test.
+
+---
+
+## Session 4 — 2026-02-26
+
+### [07:00 IST] Admin Registration Lockdown
+- Removed "admin" role option from `POST /api/auth/register` — attempting to self-register as admin now returns `403 Forbidden`
+- Admin accounts can only be created via seed script or by an existing admin through the admin dashboard
+
+### [07:05 IST] Master Admin Seed Script
+- Created `backend/seed_admin.py` — standalone script to create the initial admin user
+- Seeded admin: `vajrakavach@iiitd.ac.in` / `Admin@12345`
+- TOTP secret generated: `LW4WDOH4S22Z55VLGMMQJUT6GDZKYXLV`
+- Creates both `User` (role=ADMIN) and `UserProfile` records
+- Master admin email is hardcoded as undeletable/undemotable in all admin endpoints
+
+### [07:10 IST] Admin Lifecycle Endpoints
+- `POST /api/admin/create-admin` — Create a new admin user (returns TOTP setup info + QR code)
+- `PUT /api/admin/users/{id}/promote-admin` — Promote any existing user to admin role
+- `PUT /api/admin/users/{id}/demote-admin` — Revoke admin privileges (demote to user). Master admin cannot be demoted.
+- `DELETE /api/admin/users/{id}` — Delete user (existing). Master admin cannot be deleted.
+- All admin lifecycle actions are audit-logged with SHA-256 hash chain
+
+### [07:15 IST] Enhanced Admin Dashboard UI
+- Added "Admin Mgmt" tab to `AdminDashboard.jsx`
+  - Create new admin form (name, email, password) — displays TOTP secret + QR on creation
+  - Full user list with promote/demote buttons
+  - Master admin protection (vajrakavach@iiitd.ac.in cannot be demoted)
+- Enhanced "Users" tab with delete button alongside suspend/activate
+
+### [07:20 IST] New Feature Pages — Full Platform
+- **JobsPage.jsx** — Job search with filters (keyword, location, type, remote toggle), job cards, apply button
+- **ConnectionsPage.jsx** — User search, send connection requests, view pending/accepted connections, accept/reject
+- **MessagesPage.jsx** — Conversation list + chat view with E2E encrypted messaging
+- **CompanyPage.jsx** — Company management for recruiters (create/edit company, post jobs)
+- **ApplicationsPage.jsx** — Application tracking for job seekers (status badges for each stage)
+
+### [07:25 IST] Routes & Navigation Updates
+- Updated `App.jsx` with routes for `/jobs`, `/connections`, `/messages`, `/companies`, `/applications`
+- `CompanyPage` restricted to `recruiter` and `admin` roles
+- Updated `Navbar.jsx` — added navigation links for Jobs, Connections, Messages, Companies (recruiter/admin), Applications (user), Admin (admin)
+- Updated `DashboardPage.jsx` — feature cards are now clickable, linking to respective pages
+
+### [07:30 IST] Job Schema Enhancement
+- Added `company_name: Optional[str]` to `JobResponse` schema
+- Updated jobs route to join with Company model for `company_name` in responses
+
+### [07:35 IST] User Search Endpoint
+- Added `GET /api/users/search?q=<query>` — discovers users by name/email for connections and messaging
+
+### [07:40 IST] Start/Stop Server Scripts
+- Created `start.sh` — starts backend (uvicorn) and frontend (vite) as background processes with PID tracking, pre-flight checks (PostgreSQL, venv, node_modules), and colored output
+- Created `stop.sh` — stops both servers using PID files, cleans up orphaned processes on ports 8000/5173, graceful shutdown with force-kill fallback
+- Both scripts are executable and log output to `./logs/`
+
+### [07:45 IST] Build & Import Verification
+- Backend: `from app.main import app` — all imports clean, no errors
+- Frontend: `npx vite build` — 1540 modules transformed, 0 errors
+
+### [07:50 IST] Git Commit & Push
+- Committed all Session 4 changes
+- Pushed to GitHub
+
+### Summary — Session 4 Deliverables
+| Item | Status |
+|------|--------|
+| Admin self-registration locked (403) | Done |
+| Master admin seeded (vajrakavach@iiitd.ac.in) | Done |
+| Admin create/promote/demote endpoints | Done |
+| Master admin undemotable/undeletable | Done |
+| Admin Dashboard — Admin Mgmt tab | Done |
+| JobsPage (search, filter, apply) | Done |
+| ConnectionsPage (search, connect, accept/reject) | Done |
+| MessagesPage (E2E encrypted chat) | Done |
+| CompanyPage (recruiter company mgmt) | Done |
+| ApplicationsPage (application tracking) | Done |
+| App.jsx routes for all new pages | Done |
+| Navbar with all navigation links | Done |
+| Dashboard cards clickable | Done |
+| Job schema + company_name join | Done |
+| User search endpoint | Done |
+| start.sh server start script | Done |
+| stop.sh server stop script | Done |
+| Build verification (backend + frontend) | Done |
+
+**Admin Login Instructions:**
+1. Go to http://localhost:5173/login
+2. Email: `vajrakavach@iiitd.ac.in`, Password: `Admin@12345`
+3. TOTP verification — use secret `LW4WDOH4S22Z55VLGMMQJUT6GDZKYXLV` in any authenticator app (Google Authenticator, Authy, etc.)
+4. After TOTP verify, you'll land on the dashboard. Navigate to Admin panel via the navbar.

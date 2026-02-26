@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import api from '../services/api';
-import { Shield, Users, Briefcase, FileText, Activity, CheckCircle, XCircle, UserX, UserCheck } from 'lucide-react';
+import { Shield, Users, Briefcase, FileText, Activity, CheckCircle, XCircle, UserX, UserCheck, UserPlus, ChevronUp, ChevronDown, Trash2 } from 'lucide-react';
 
 export default function AdminDashboard() {
   const [stats, setStats] = useState(null);
@@ -11,6 +11,11 @@ export default function AdminDashboard() {
   const [activeTab, setActiveTab] = useState('overview');
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
+
+  // Create admin form
+  const [showCreateAdmin, setShowCreateAdmin] = useState(false);
+  const [adminForm, setAdminForm] = useState({ email: '', password: '', full_name: '' });
+  const [newAdminInfo, setNewAdminInfo] = useState(null);
 
   useEffect(() => {
     fetchData();
@@ -54,8 +59,10 @@ export default function AdminDashboard() {
       await api.put(`/admin/users/${userId}/suspend`);
       setMessage('User suspended');
       fetchData();
+      setTimeout(() => setMessage(''), 3000);
     } catch (err) {
       setError(err.response?.data?.detail || 'Failed to suspend user');
+      setTimeout(() => setError(''), 3000);
     }
   };
 
@@ -64,8 +71,64 @@ export default function AdminDashboard() {
       await api.put(`/admin/users/${userId}/activate`);
       setMessage('User activated');
       fetchData();
+      setTimeout(() => setMessage(''), 3000);
     } catch (err) {
       setError(err.response?.data?.detail || 'Failed to activate user');
+      setTimeout(() => setError(''), 3000);
+    }
+  };
+
+  const deleteUser = async (userId) => {
+    if (!confirm('Permanently delete this user?')) return;
+    try {
+      await api.delete(`/admin/users/${userId}`);
+      setMessage('User deleted');
+      fetchData();
+      setTimeout(() => setMessage(''), 3000);
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Failed to delete user');
+      setTimeout(() => setError(''), 3000);
+    }
+  };
+
+  const promoteToAdmin = async (userId) => {
+    if (!confirm('Promote this user to admin?')) return;
+    try {
+      await api.put(`/admin/users/${userId}/promote-admin`);
+      setMessage('User promoted to admin');
+      fetchData();
+      setTimeout(() => setMessage(''), 3000);
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Failed to promote');
+      setTimeout(() => setError(''), 3000);
+    }
+  };
+
+  const demoteFromAdmin = async (userId) => {
+    if (!confirm('Remove admin privileges from this user?')) return;
+    try {
+      await api.put(`/admin/users/${userId}/demote-admin`);
+      setMessage('Admin privileges removed');
+      fetchData();
+      setTimeout(() => setMessage(''), 3000);
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Failed to demote');
+      setTimeout(() => setError(''), 3000);
+    }
+  };
+
+  const handleCreateAdmin = async (e) => {
+    e.preventDefault();
+    try {
+      const res = await api.post('/admin/create-admin', adminForm);
+      setNewAdminInfo(res.data);
+      setMessage('Admin created successfully');
+      setAdminForm({ email: '', password: '', full_name: '' });
+      fetchData();
+      setTimeout(() => setMessage(''), 5000);
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Failed to create admin');
+      setTimeout(() => setError(''), 3000);
     }
   };
 
@@ -74,6 +137,7 @@ export default function AdminDashboard() {
   const tabs = [
     { id: 'overview', label: 'Overview' },
     { id: 'users', label: 'Users' },
+    { id: 'admins', label: 'Admin Mgmt' },
     { id: 'audit', label: 'Audit Logs' },
   ];
 
@@ -143,21 +207,106 @@ export default function AdminDashboard() {
                 <tr key={u.id} className="hover:bg-gray-50">
                   <td className="px-6 py-4 text-sm font-medium text-gray-900">{u.full_name}</td>
                   <td className="px-6 py-4 text-sm text-gray-600">{u.email}</td>
-                  <td className="px-6 py-4"><span className="px-2 py-1 text-xs font-medium bg-primary-100 text-primary-700 rounded-full uppercase">{u.role}</span></td>
-                  <td className="px-6 py-4">{u.is_active ? <span className="text-green-600 text-sm">Active</span> : <span className="text-red-600 text-sm">Inactive</span>}</td>
+                  <td className="px-6 py-4"><span className={`px-2 py-1 text-xs font-medium rounded-full uppercase ${
+                    u.role === 'admin' ? 'bg-red-100 text-red-700' : u.role === 'recruiter' ? 'bg-green-100 text-green-700' : 'bg-primary-100 text-primary-700'
+                  }`}>{u.role}</span></td>
+                  <td className="px-6 py-4">{u.is_active ? <span className="text-green-600 text-sm">Active</span> : <span className="text-red-600 text-sm">Suspended</span>}</td>
                   <td className="px-6 py-4">{u.totp_verified ? <CheckCircle className="h-4 w-4 text-green-600" /> : <XCircle className="h-4 w-4 text-gray-400" />}</td>
-                  <td className="px-6 py-4 flex space-x-2">
-                    <button onClick={() => suspendUser(u.id)} className="text-red-600 hover:text-red-700 text-xs flex items-center" title="Suspend">
+                  <td className="px-6 py-4 flex space-x-1">
+                    <button onClick={() => suspendUser(u.id)} className="text-red-600 hover:text-red-700 p-1 rounded hover:bg-red-50" title="Suspend">
                       <UserX className="h-4 w-4" />
                     </button>
-                    <button onClick={() => activateUser(u.id)} className="text-green-600 hover:text-green-700 text-xs flex items-center" title="Activate">
+                    <button onClick={() => activateUser(u.id)} className="text-green-600 hover:text-green-700 p-1 rounded hover:bg-green-50" title="Activate">
                       <UserCheck className="h-4 w-4" />
+                    </button>
+                    <button onClick={() => deleteUser(u.id)} className="text-red-600 hover:text-red-700 p-1 rounded hover:bg-red-50" title="Delete">
+                      <Trash2 className="h-4 w-4" />
                     </button>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* Admin Management Tab */}
+      {activeTab === 'admins' && (
+        <div>
+          {/* Create Admin Form */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 mb-6">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold text-gray-900">Create New Admin</h3>
+              <button onClick={() => setShowCreateAdmin(!showCreateAdmin)} className="text-primary-600 text-sm">
+                {showCreateAdmin ? 'Hide' : 'Show Form'}
+              </button>
+            </div>
+            {showCreateAdmin && (
+              <form onSubmit={handleCreateAdmin} className="space-y-3">
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
+                    <input type="text" value={adminForm.full_name} onChange={e => setAdminForm({ ...adminForm, full_name: e.target.value })} required
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 outline-none" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                    <input type="email" value={adminForm.email} onChange={e => setAdminForm({ ...adminForm, email: e.target.value })} required
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 outline-none" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                    <input type="password" value={adminForm.password} onChange={e => setAdminForm({ ...adminForm, password: e.target.value })} required minLength={8}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 outline-none" />
+                  </div>
+                </div>
+                <button type="submit" className="flex items-center gap-2 bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-red-700 transition">
+                  <UserPlus className="h-4 w-4" /> Create Admin
+                </button>
+              </form>
+            )}
+            {newAdminInfo && (
+              <div className="mt-4 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                <p className="text-sm font-medium text-yellow-800">New admin created! Share TOTP secret with them:</p>
+                <p className="font-mono text-sm mt-1 text-yellow-900">{newAdminInfo.totp_secret}</p>
+                {newAdminInfo.qr_code_base64 && (
+                  <img src={`data:image/png;base64,${newAdminInfo.qr_code_base64}`} alt="TOTP QR" className="mt-2" style={{ width: 150, height: 150 }} />
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Admin Users List */}
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">Current Admins & User Roles</h3>
+            <div className="space-y-2">
+              {users.map(u => (
+                <div key={u.id} className="flex items-center justify-between py-2 px-3 rounded-lg hover:bg-gray-50">
+                  <div>
+                    <span className="font-medium text-gray-900 text-sm">{u.full_name}</span>
+                    <span className="text-gray-400 text-sm ml-2">({u.email})</span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className={`px-2 py-0.5 text-xs font-medium rounded-full uppercase ${
+                      u.role === 'admin' ? 'bg-red-100 text-red-700' : u.role === 'recruiter' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'
+                    }`}>{u.role}</span>
+                    {u.role !== 'admin' && (
+                      <button onClick={() => promoteToAdmin(u.id)}
+                        className="flex items-center gap-1 text-xs bg-red-50 text-red-600 px-2 py-1 rounded hover:bg-red-100 transition">
+                        <ChevronUp className="h-3 w-3" /> Promote
+                      </button>
+                    )}
+                    {u.role === 'admin' && (
+                      <button onClick={() => demoteFromAdmin(u.id)}
+                        className="flex items-center gap-1 text-xs bg-gray-50 text-gray-600 px-2 py-1 rounded hover:bg-gray-100 transition">
+                        <ChevronDown className="h-3 w-3" /> Demote
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       )}
 

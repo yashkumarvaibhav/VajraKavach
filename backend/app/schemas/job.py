@@ -36,6 +36,7 @@ class JobUpdate(BaseModel):
 class JobResponse(BaseModel):
     id: str
     company_id: str
+    company_name: Optional[str] = None
     title: str
     description: str
     required_skills: Optional[List[str]] = None

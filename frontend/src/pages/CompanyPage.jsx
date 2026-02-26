@@ -1,17 +1,30 @@
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
-import { Building2, Plus, Briefcase, MapPin, Globe, Search, ChevronDown, ChevronUp, Users as UsersIcon } from 'lucide-react';
+import { Building2, Plus, Briefcase, MapPin, Globe, Search, ChevronDown, ChevronUp, Users as UsersIcon, Filter, SortAsc, Eye, Mail, FileText, CheckCircle, XCircle, Clock } from 'lucide-react';
 
 const CURRENCIES = ['INR', 'USD', 'EUR', 'GBP'];
+const STATUS_OPTIONS = [
+  { value: 'applied', label: 'Applied', color: 'bg-blue-50 text-blue-700' },
+  { value: 'reviewed', label: 'Reviewed', color: 'bg-yellow-50 text-yellow-700' },
+  { value: 'interviewed', label: 'Interviewed', color: 'bg-purple-50 text-purple-700' },
+  { value: 'offer', label: 'Offer', color: 'bg-green-50 text-green-700' },
+  { value: 'rejected', label: 'Rejected', color: 'bg-red-50 text-red-700' },
+];
 
 export default function CompanyPage() {
   const { user } = useAuth();
+  const [searchParams] = useSearchParams();
   const isRecruiter = user?.role === 'recruiter';
-  const [tab, setTab] = useState(isRecruiter ? 'my' : 'search');
+  const initialTab = searchParams.get('tab') || (isRecruiter ? 'my' : 'browse');
+  const [tab, setTab] = useState(initialTab);
   const [companies, setCompanies] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState([]);
+  const [allCompanies, setAllCompanies] = useState([]);
+  const [industryFilter, setIndustryFilter] = useState('');
+  const [locationFilter, setLocationFilter] = useState('');
+  const [sortOrder, setSortOrder] = useState('asc');
   const [myJobs, setMyJobs] = useState([]);
   const [showCreate, setShowCreate] = useState(false);
   const [expandedCompany, setExpandedCompany] = useState(null);
@@ -27,12 +40,36 @@ export default function CompanyPage() {
     salary_currency: 'INR', job_type: 'full_time', location_type: 'onsite', application_deadline: '',
   });
   const [postingJobFor, setPostingJobFor] = useState(null);
+  const [selectedJob, setSelectedJob] = useState(null);
+  const [applicants, setApplicants] = useState([]);
+  const [loadingApplicants, setLoadingApplicants] = useState(false);
 
   const today = new Date().toISOString().split('T')[0];
 
   useEffect(() => {
     if (isRecruiter) fetchMyCompanies();
+    fetchAllCompanies();
   }, [isRecruiter]);
+
+  const fetchAllCompanies = async () => {
+    try {
+      const res = await api.get('/companies/search');
+      setAllCompanies(res.data || []);
+    } catch (err) {
+      console.error('Fetch all companies error:', err);
+    }
+  };
+
+  const filteredCompanies = allCompanies
+    .filter(c => {
+      if (searchQuery && !c.name?.toLowerCase().includes(searchQuery.toLowerCase()) && !c.location?.toLowerCase().includes(searchQuery.toLowerCase())) return false;
+      if (industryFilter && c.industry !== industryFilter) return false;
+      if (locationFilter && !c.location?.toLowerCase().includes(locationFilter.toLowerCase())) return false;
+      return true;
+    })
+    .sort((a, b) => sortOrder === 'asc' ? (a.name || '').localeCompare(b.name || '') : (b.name || '').localeCompare(a.name || ''));
+
+  const uniqueIndustries = [...new Set(allCompanies.map(c => c.industry).filter(Boolean))].sort();
 
   const fetchMyCompanies = async () => {
     setLoading(true);
@@ -59,16 +96,6 @@ export default function CompanyPage() {
     if (tab === 'jobs' && isRecruiter) fetchMyJobs();
   }, [tab]);
 
-  const searchCompanies = async () => {
-    if (!searchQuery.trim()) return;
-    try {
-      const res = await api.get(`/companies/search?q=${encodeURIComponent(searchQuery)}`);
-      setSearchResults(res.data || []);
-    } catch (err) {
-      console.error('Search error:', err);
-    }
-  };
-
   const createCompany = async (e) => {
     e.preventDefault();
     setError('');
@@ -92,6 +119,10 @@ export default function CompanyPage() {
   const postJob = async (e) => {
     e.preventDefault();
     setError('');
+    if (jobForm.salary_min && jobForm.salary_max && Number(jobForm.salary_max) < Number(jobForm.salary_min)) {
+      setError('Maximum salary cannot be less than minimum salary');
+      return;
+    }
     try {
       await api.post('/jobs/', {
         ...jobForm,
@@ -109,6 +140,34 @@ export default function CompanyPage() {
       const detail = err.response?.data?.detail;
       if (Array.isArray(detail)) setError(detail.map(d => d.msg || d).join('; '));
       else setError(detail || 'Failed to post job');
+    }
+  };
+
+  const fetchApplicants = async (jobId) => {
+    if (selectedJob === jobId) { setSelectedJob(null); setApplicants([]); return; }
+    setSelectedJob(jobId);
+    setLoadingApplicants(true);
+    try {
+      const res = await api.get(`/applications/job/${jobId}`);
+      setApplicants(res.data || []);
+    } catch (err) {
+      console.error('Fetch applicants error:', err);
+      setApplicants([]);
+    } finally {
+      setLoadingApplicants(false);
+    }
+  };
+
+  const updateApplicationStatus = async (appId, newStatus, notes) => {
+    try {
+      const payload = { status: newStatus };
+      if (notes !== undefined) payload.recruiter_notes = notes;
+      await api.put(`/applications/${appId}/status`, payload);
+      setApplicants(prev => prev.map(a =>
+        a.id === appId ? { ...a, status: newStatus, ...(notes !== undefined ? { recruiter_notes: notes } : {}) } : a
+      ));
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Failed to update status');
     }
   };
 
@@ -160,9 +219,9 @@ export default function CompanyPage() {
             My Companies
           </button>
         )}
-        <button onClick={() => setTab('search')}
-          className={`px-4 py-2 rounded-md text-sm font-medium transition ${tab === 'search' ? 'bg-white text-primary-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
-          Search Companies
+        <button onClick={() => setTab('browse')}
+          className={`px-4 py-2 rounded-md text-sm font-medium transition ${tab === 'browse' ? 'bg-white text-primary-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>
+          Browse Companies
         </button>
         {isRecruiter && (
           <button onClick={() => setTab('jobs')}
@@ -191,32 +250,32 @@ export default function CompanyPage() {
                 <div className="col-span-2">
                   <label className="text-sm font-medium text-gray-700 mb-1 block">Company Name <span className="text-red-500">*</span></label>
                   <input type="text" value={companyForm.name} onChange={(e) => setCompanyForm(f => ({ ...f, name: e.target.value }))}
-                    required className={inputClass} placeholder="Acme Corp" />
+                    required maxLength={255} className={inputClass} placeholder="Acme Corp" />
                 </div>
                 <div className="col-span-2">
                   <label className="text-sm font-medium text-gray-700 mb-1 block">Description <span className="text-red-500">*</span></label>
                   <textarea value={companyForm.description} onChange={(e) => setCompanyForm(f => ({ ...f, description: e.target.value }))}
-                    required className={inputClass + " h-20 resize-none"} placeholder="What does the company do?" />
+                    required maxLength={5000} className={inputClass + " h-20 resize-none"} placeholder="What does the company do?" />
                 </div>
                 <div>
                   <label className="text-sm font-medium text-gray-700 mb-1 block">Location <span className="text-red-500">*</span></label>
                   <input type="text" value={companyForm.location} onChange={(e) => setCompanyForm(f => ({ ...f, location: e.target.value }))}
-                    required className={inputClass} placeholder="New Delhi, India" />
+                    required maxLength={255} className={inputClass} placeholder="New Delhi, India" />
                 </div>
                 <div>
                   <label className="text-sm font-medium text-gray-700 mb-1 block">Website <span className="text-red-500">*</span></label>
                   <input type="text" value={companyForm.website} onChange={(e) => setCompanyForm(f => ({ ...f, website: e.target.value }))}
-                    required className={inputClass} placeholder="acme.com or https://acme.com" />
+                    required maxLength={512} className={inputClass} placeholder="acme.com or https://acme.com" />
                 </div>
                 <div>
                   <label className="text-sm font-medium text-gray-700 mb-1 block">Industry</label>
                   <input type="text" value={companyForm.industry} onChange={(e) => setCompanyForm(f => ({ ...f, industry: e.target.value }))}
-                    className={inputClass} placeholder="Technology" />
+                    maxLength={255} className={inputClass} placeholder="Technology" />
                 </div>
                 <div>
                   <label className="text-sm font-medium text-gray-700 mb-1 block">Size</label>
                   <input type="text" value={companyForm.size} onChange={(e) => setCompanyForm(f => ({ ...f, size: e.target.value }))}
-                    className={inputClass} placeholder="100-500" />
+                    maxLength={50} className={inputClass} placeholder="100-500" />
                 </div>
               </div>
               <div className="flex justify-end gap-2 mt-4">
@@ -243,23 +302,31 @@ export default function CompanyPage() {
         </div>
       )}
 
-      {/* Search Tab */}
-      {tab === 'search' && (
+      {/* Browse Tab */}
+      {tab === 'browse' && (
         <div>
-          <div className="flex gap-2 mb-6">
+          <div className="flex flex-wrap gap-2 mb-6">
             <input type="text" value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && searchCompanies()}
               placeholder="Search by name or location..."
-              className="flex-1 px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none" />
-            <button onClick={searchCompanies}
-              className="px-6 py-2.5 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition flex items-center gap-1">
-              <Search className="h-4 w-4" /> Search
+              maxLength={100}
+              className="flex-1 min-w-[200px] px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none" />
+            {uniqueIndustries.length > 0 && (
+              <select value={industryFilter} onChange={(e) => setIndustryFilter(e.target.value)}
+                className="px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 outline-none">
+                <option value="">All Industries</option>
+                {uniqueIndustries.map(ind => <option key={ind} value={ind}>{ind}</option>)}
+              </select>
+            )}
+            <button onClick={() => setSortOrder(s => s === 'asc' ? 'desc' : 'asc')}
+              className="px-4 py-2.5 border border-gray-300 rounded-lg hover:bg-gray-50 transition flex items-center gap-1 text-sm">
+              <SortAsc className="h-4 w-4" /> {sortOrder === 'asc' ? 'A → Z' : 'Z → A'}
             </button>
           </div>
+          <p className="text-sm text-gray-500 mb-4">{filteredCompanies.length} companies</p>
           <div className="space-y-4">
-            {searchResults.map(c => <CompanyCard key={c.id} company={c} showActions={false} />)}
-            {searchResults.length === 0 && searchQuery && (
+            {filteredCompanies.map(c => <CompanyCard key={c.id} company={c} showActions={false} />)}
+            {filteredCompanies.length === 0 && (
               <div className="text-center py-8 text-gray-400">No companies found</div>
             )}
           </div>
@@ -277,25 +344,103 @@ export default function CompanyPage() {
           ) : (
             <div className="space-y-3">
               {myJobs.map(job => (
-                <div key={job.id} className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <h3 className="font-semibold text-gray-900">{job.title}</h3>
-                      <p className="text-sm text-gray-500">{job.company_name}</p>
+                <div key={job.id} className="bg-white rounded-xl shadow-sm border border-gray-100">
+                  <div className="p-5 cursor-pointer" onClick={() => fetchApplicants(job.id)}>
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <h3 className="font-semibold text-gray-900">{job.title}</h3>
+                        <p className="text-sm text-gray-500">{job.company_name}</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1 text-sm text-primary-600 bg-primary-50 px-2 py-1 rounded-full">
+                          <UsersIcon className="h-3.5 w-3.5" />
+                          {job.applicant_count || 0} applicants
+                        </div>
+                        {selectedJob === job.id ? <ChevronUp className="h-5 w-5 text-gray-400" /> : <ChevronDown className="h-5 w-5 text-gray-400" />}
+                      </div>
                     </div>
-                    <div className="flex items-center gap-1 text-sm text-primary-600 bg-primary-50 px-2 py-1 rounded-full">
-                      <UsersIcon className="h-3.5 w-3.5" />
-                      {job.applicant_count || 0} applicants
+                    <div className="flex items-center gap-4 mt-2 text-sm text-gray-500">
+                      {job.location && <span className="flex items-center gap-1"><MapPin className="h-3.5 w-3.5" />{job.location}</span>}
+                      {(job.salary_min || job.salary_max) && (
+                        <span>{job.salary_currency || 'INR'} {job.salary_min?.toLocaleString()}{job.salary_max ? ` - ${job.salary_max.toLocaleString()}` : ''}</span>
+                      )}
+                      <span className="capitalize">{job.job_type?.replace('_', ' ')}</span>
+                      {job.is_active ? <span className="text-green-600">Active</span> : <span className="text-red-500">Closed</span>}
                     </div>
                   </div>
-                  <div className="flex items-center gap-4 mt-2 text-sm text-gray-500">
-                    {job.location && <span className="flex items-center gap-1"><MapPin className="h-3.5 w-3.5" />{job.location}</span>}
-                    {(job.salary_min || job.salary_max) && (
-                      <span>{job.salary_currency || 'INR'} {job.salary_min?.toLocaleString()}{job.salary_max ? ` - ${job.salary_max.toLocaleString()}` : ''}</span>
-                    )}
-                    <span className="capitalize">{job.job_type}</span>
-                    {job.is_active ? <span className="text-green-600">Active</span> : <span className="text-red-500">Closed</span>}
-                  </div>
+
+                  {/* Applicants Panel */}
+                  {selectedJob === job.id && (
+                    <div className="border-t border-gray-100 p-5 bg-gray-50">
+                      <h4 className="text-sm font-semibold text-gray-700 mb-3">Applicants</h4>
+                      {loadingApplicants ? (
+                        <p className="text-sm text-gray-400 text-center py-4">Loading applicants...</p>
+                      ) : applicants.length === 0 ? (
+                        <p className="text-sm text-gray-400 text-center py-4">No applicants yet.</p>
+                      ) : (
+                        <div className="space-y-3">
+                          {applicants.map(app => {
+                            const statusInfo = STATUS_OPTIONS.find(s => s.value === app.status) || STATUS_OPTIONS[0];
+                            return (
+                              <div key={app.id} className="bg-white rounded-lg border border-gray-200 p-4">
+                                <div className="flex items-start justify-between gap-4">
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <p className="font-semibold text-gray-900">{app.applicant_name || 'Unknown'}</p>
+                                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${statusInfo.color}`}>
+                                        {statusInfo.label}
+                                      </span>
+                                    </div>
+                                    {app.applicant_email && (
+                                      <p className="text-xs text-gray-500 flex items-center gap-1 mt-1">
+                                        <Mail className="h-3 w-3" /> {app.applicant_email}
+                                      </p>
+                                    )}
+                                    {app.cover_note && (
+                                      <div className="mt-2 p-2 bg-gray-50 rounded text-sm text-gray-600 border-l-2 border-primary-300">
+                                        <p className="text-xs font-medium text-gray-500 mb-1">Cover Note:</p>
+                                        {app.cover_note}
+                                      </div>
+                                    )}
+                                    <p className="text-xs text-gray-400 mt-2">
+                                      Applied {new Date(app.created_at).toLocaleDateString()}
+                                    </p>
+                                  </div>
+
+                                  {/* Status Update Controls */}
+                                  <div className="flex flex-col gap-2 flex-shrink-0">
+                                    <select
+                                      value={app.status}
+                                      onChange={(e) => updateApplicationStatus(app.id, e.target.value)}
+                                      className="text-xs border border-gray-300 rounded-lg px-2 py-1.5 bg-white focus:ring-2 focus:ring-primary-500 outline-none">
+                                      {STATUS_OPTIONS.map(s => (
+                                        <option key={s.value} value={s.value}>{s.label}</option>
+                                      ))}
+                                    </select>
+                                    <button
+                                      onClick={() => {
+                                        const notes = prompt('Recruiter Notes:', app.recruiter_notes || '');
+                                        if (notes !== null) updateApplicationStatus(app.id, app.status, notes);
+                                      }}
+                                      className="text-xs px-2 py-1.5 border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center gap-1">
+                                      <FileText className="h-3 w-3" /> Notes
+                                    </button>
+                                  </div>
+                                </div>
+
+                                {app.recruiter_notes && (
+                                  <div className="mt-2 p-2 bg-yellow-50 rounded text-sm text-yellow-800 border-l-2 border-yellow-400">
+                                    <p className="text-xs font-medium text-yellow-600 mb-1">Your Notes:</p>
+                                    {app.recruiter_notes}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -313,17 +458,17 @@ export default function CompanyPage() {
               <div>
                 <label className="text-sm font-medium text-gray-700 mb-1 block">Job Title <span className="text-red-500">*</span></label>
                 <input type="text" value={jobForm.title} onChange={(e) => setJobForm(f => ({ ...f, title: e.target.value }))}
-                  required className={inputClass} placeholder="Software Engineer" />
+                  required maxLength={255} className={inputClass} placeholder="Software Engineer" />
               </div>
               <div>
                 <label className="text-sm font-medium text-gray-700 mb-1 block">Description <span className="text-red-500">*</span></label>
                 <textarea value={jobForm.description} onChange={(e) => setJobForm(f => ({ ...f, description: e.target.value }))}
-                  required className={inputClass + " h-24 resize-none"} placeholder="Job description..." />
+                  required maxLength={10000} className={inputClass + " h-24 resize-none"} placeholder="Job description..." />
               </div>
               <div>
                 <label className="text-sm font-medium text-gray-700 mb-1 block">Location</label>
                 <input type="text" value={jobForm.location} onChange={(e) => setJobForm(f => ({ ...f, location: e.target.value }))}
-                  className={inputClass} placeholder="Remote / City" />
+                  maxLength={255} className={inputClass} placeholder="Remote / City" />
               </div>
               <div className="grid grid-cols-3 gap-3">
                 <div>

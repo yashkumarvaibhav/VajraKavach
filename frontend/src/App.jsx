@@ -16,6 +16,7 @@ import ApplicationsPage from './pages/ApplicationsPage';
 import AdminDashboard from './pages/AdminDashboard';
 import SecurityPage from './pages/SecurityPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
+import ViewProfilePage from './pages/ViewProfilePage';
 
 function ProtectedRoute({ children, requiredRole, allowedRoles }) {
   const { user, loading, totpRequired } = useAuth();
@@ -54,6 +55,7 @@ export default function App() {
         <Route path="/verify-totp" element={<TOTPVerifyPage />} />
         <Route path="/dashboard" element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
         <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
+        <Route path="/profile/:userId" element={<ProtectedRoute><ViewProfilePage /></ProtectedRoute>} />
         <Route path="/resume" element={<ProtectedRoute><ResumePage /></ProtectedRoute>} />
         <Route path="/resumes" element={<ProtectedRoute><ResumePage /></ProtectedRoute>} />
         <Route path="/jobs" element={<ProtectedRoute><JobsPage /></ProtectedRoute>} />

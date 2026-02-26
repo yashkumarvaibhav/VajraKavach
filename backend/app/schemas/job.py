@@ -37,6 +37,19 @@ class JobCreate(BaseModel):
             raise ValueError(f"Currency must be one of: {', '.join(CURRENCY_CHOICES)}")
         return v
 
+    @field_validator("salary_max")
+    @classmethod
+    def max_salary_gte_min(cls, v, info):
+        salary_min = info.data.get("salary_min")
+        if v is not None and salary_min is not None:
+            try:
+                if float(v) < float(salary_min):
+                    raise ValueError("Maximum salary cannot be less than minimum salary")
+            except (TypeError, ValueError) as e:
+                if "Maximum salary" in str(e):
+                    raise
+        return v
+
 
 class JobUpdate(BaseModel):
     title: Optional[str] = Field(None, max_length=255)

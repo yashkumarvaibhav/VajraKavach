@@ -113,6 +113,7 @@ export default function TOTPVerifyPage() {
               onKeyPress={handleVirtualKeyPress}
               onBackspace={handleVirtualBackspace}
               onClear={() => setToken('')}
+              hideToggle
             />
           )}
 

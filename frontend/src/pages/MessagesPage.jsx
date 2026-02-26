@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
-import { MessageSquare, Send, Plus, ArrowLeft, Users } from 'lucide-react';
+import { MessageSquare, Send, Plus, ArrowLeft, Users, Trash2, X } from 'lucide-react';
 
 export default function MessagesPage() {
   const { user } = useAuth();
@@ -71,13 +71,12 @@ export default function MessagesPage() {
 
   const startNewConversation = async (partnerId) => {
     try {
-      const res = await api.post('/messages/', {
+      await api.post('/messages/', {
         recipient_id: partnerId,
         ciphertext: 'Hello!',
       });
       setShowNewConv(false);
       await fetchConversations();
-      // Find the conversation (either newly created or existing)
       const convRes = await api.get('/messages/conversations');
       const convList = convRes.data || [];
       const target = convList.find(c => c.partner_id === partnerId);
@@ -86,6 +85,28 @@ export default function MessagesPage() {
       }
     } catch (err) {
       alert(err.response?.data?.detail || 'Failed to start conversation');
+    }
+  };
+
+  const deleteMessage = async (msgId) => {
+    if (!confirm('Delete this message?')) return;
+    try {
+      await api.delete(`/messages/${msgId}`);
+      fetchMessages(activeConv.id);
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Cannot delete this message');
+    }
+  };
+
+  const deleteConversation = async (convId) => {
+    if (!confirm('Delete this entire conversation? All messages will be lost.')) return;
+    try {
+      await api.delete(`/messages/conversations/${convId}`);
+      setActiveConv(null);
+      setMessages([]);
+      fetchConversations();
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Failed to delete conversation');
     }
   };
 
@@ -175,10 +196,14 @@ export default function MessagesPage() {
                       {(activeConv.partner_name || '?')[0].toUpperCase()}
                     </span>
                   </div>
-                  <div>
+                  <div className="flex-1">
                     <h3 className="font-semibold text-gray-900">{activeConv.partner_name || 'Unknown'}</h3>
                     <p className="text-xs text-gray-400">End-to-end encrypted</p>
                   </div>
+                  <button onClick={() => deleteConversation(activeConv.id)}
+                    className="p-2 hover:bg-red-50 rounded-lg transition text-red-400 hover:text-red-600" title="Delete conversation">
+                    <Trash2 className="h-4 w-4" />
+                  </button>
                 </div>
 
                 {/* Messages */}
@@ -186,7 +211,13 @@ export default function MessagesPage() {
                   {messages.map(msg => {
                     const isMe = msg.sender_id === user?.id;
                     return (
-                      <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
+                      <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'} group`}>
+                        {isMe && (
+                          <button onClick={() => deleteMessage(msg.id)}
+                            className="self-center mr-2 p-1 opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 transition" title="Delete message">
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        )}
                         <div className={`max-w-[70%] px-4 py-2.5 rounded-2xl ${
                           isMe
                             ? 'bg-primary-600 text-white rounded-br-md'
@@ -209,6 +240,7 @@ export default function MessagesPage() {
                     type="text" value={newMessage}
                     onChange={(e) => setNewMessage(e.target.value)}
                     placeholder="Type a message..."
+                    maxLength={5000}
                     className="flex-1 px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none"
                   />
                   <button type="submit" disabled={sendingMsg || !newMessage.trim()}

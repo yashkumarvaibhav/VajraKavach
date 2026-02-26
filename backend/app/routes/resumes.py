@@ -287,7 +287,7 @@ async def parse_resume(
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
 
     try:
-        decrypted_data = read_decrypted_resume(resume.encrypted_path)
+        decrypted_data = await read_decrypted_resume(resume.encrypted_path)
     except Exception:
         raise HTTPException(status_code=500, detail="Failed to decrypt resume")
 
@@ -325,7 +325,7 @@ async def match_resume_to_job(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
 
     try:
-        decrypted_data = read_decrypted_resume(resume.encrypted_path)
+        decrypted_data = await read_decrypted_resume(resume.encrypted_path)
     except Exception:
         raise HTTPException(status_code=500, detail="Failed to decrypt resume")
 

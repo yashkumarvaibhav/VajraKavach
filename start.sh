@@ -80,7 +80,7 @@ if [[ "$BACKEND_RUNNING" = false ]]; then
     echo -e "${CYAN}▶  Starting backend (FastAPI on port 8000)...${NC}"
     cd "$BACKEND_DIR"
     source venv/bin/activate
-    nohup uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload \
+    setsid nohup uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload \
         > "$LOG_DIR/backend.log" 2>&1 &
     BACKEND_PID=$!
     echo "$BACKEND_PID" > "$PIDFILE_BACKEND"
@@ -102,7 +102,7 @@ fi
 if [[ "$FRONTEND_RUNNING" = false ]]; then
     echo -e "${CYAN}▶  Starting frontend (Vite on port 5173)...${NC}"
     cd "$FRONTEND_DIR"
-    nohup npx vite --host 0.0.0.0 --port 5173 \
+    setsid nohup npx vite --host 0.0.0.0 --port 5173 \
         > "$LOG_DIR/frontend.log" 2>&1 &
     FRONTEND_PID=$!
     echo "$FRONTEND_PID" > "$PIDFILE_FRONTEND"

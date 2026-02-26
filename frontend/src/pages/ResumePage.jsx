@@ -3,6 +3,7 @@ import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
 import VirtualKeyboard from '../components/VirtualKeyboard';
 import { FileText, Upload, Download, Trash2, Shield, X, CheckCircle } from 'lucide-react';
+import { toISTDate } from '../utils/time';
 
 export default function ResumePage() {
   const { user } = useAuth();
@@ -146,7 +147,7 @@ export default function ResumePage() {
               <div>
                 <p className="font-semibold text-gray-900">{resume.original_filename}</p>
                 <p className="text-xs text-gray-400">
-                  Uploaded {new Date(resume.uploaded_at || resume.created_at).toLocaleDateString()}
+                  Uploaded {toISTDate(resume.uploaded_at || resume.created_at)}
                   {resume.file_size && ` • ${(resume.file_size / 1024).toFixed(0)} KB`}
                 </p>
               </div>

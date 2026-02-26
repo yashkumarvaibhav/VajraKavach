@@ -52,8 +52,8 @@ def extract_skills_from_text(text: str) -> List[str]:
     """
     SKILL_KEYWORDS = [
         # Programming Languages
-        "python", "java", "javascript", "typescript", "c\\+\\+", "c#", "ruby", "go",
-        "rust", "php", "swift", "kotlin", "scala", "r", "matlab", "perl", "dart",
+        "python", "java", "javascript", "typescript", "c#", "ruby", "go",
+        "rust", "php", "swift", "kotlin", "scala", "matlab", "perl", "dart",
         "html", "css", "sql", "bash", "shell",
         # Frameworks & Libraries
         "react", "angular", "vue", "django", "flask", "fastapi", "spring", "express",
@@ -77,15 +77,39 @@ def extract_skills_from_text(text: str) -> List[str]:
         # General
         "agile", "scrum", "jira", "git", "figma", "photoshop",
         "project management", "communication", "leadership", "teamwork",
+        "algorithm optimization", "data structures", "system design",
+        "multithreading", "concurrency",
     ]
 
+    # Multi-word skills that need flexible regex matching (words may have other words between them)
+    FLEXIBLE_SKILLS = {
+        "algorithm optimization": r'\balgorithm\b.{0,30}\boptimization\b',
+    }
+
     text_lower = text.lower()
+    # Normalize excessive whitespace from PDF extraction artifacts
+    text_lower = re.sub(r'\s+', ' ', text_lower)
     found = set()
     for skill in SKILL_KEYWORDS:
-        if re.search(r'\b' + skill + r'\b', text_lower):
+        # Check if this skill has a flexible regex override
+        if skill in FLEXIBLE_SKILLS:
+            if re.search(FLEXIBLE_SKILLS[skill], text_lower):
+                found.add(skill)
+        elif re.search(r'\b' + skill + r'\b', text_lower):
             # Normalize the display name
-            clean = skill.replace("\\+\\+", "++").replace("\\.", ".").replace("\\.js", ".js")
+            clean = skill.replace("\\.", ".").replace("\\.js", ".js")
             found.add(clean)
+
+    # Special handling for C++ (word boundary after ++ doesn't work)
+    if re.search(r'\bc\s*\+\s*\+', text_lower):
+        found.add("c++")
+    # Special handling for standalone C (the language)
+    if re.search(r'(?:^|[,;|/\s])c(?:[,;|/\s]|$)', text_lower):
+        found.add("c")
+    # Special handling for R (the language) — require context clues
+    if re.search(r'(?:^|[,;|\s])r(?:[,;|\s]|$)', text_lower) and re.search(r'\b(?:statistics|data\s*science|rstudio|cran|ggplot|tidyverse|shiny)\b', text_lower):
+        found.add("r")
+
     return sorted(found)
 
 
@@ -106,14 +130,21 @@ def compute_match_score(
     matched = []
     missing = []
     for skill in required_set:
-        # Fuzzy: check if the required skill appears in any resume skill
         found = False
         for rs in resume_set:
-            if skill in rs or rs in skill:
+            # Exact match
+            if skill == rs:
                 found = True
-                matched.append(skill)
                 break
-        if not found:
+            # Substring match only if the shorter string is at least 3 chars
+            # to prevent "c" matching "css" or "r" matching "react"
+            shorter = min(len(skill), len(rs))
+            if shorter >= 3 and (skill in rs or rs in skill):
+                found = True
+                break
+        if found:
+            matched.append(skill)
+        else:
             missing.append(skill)
 
     total = len(required_set)

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
-import { Building2, Plus, Briefcase, MapPin, Globe, Search, ChevronDown, ChevronUp, Users as UsersIcon, Filter, SortAsc, Eye, Mail, FileText, CheckCircle, XCircle, Clock, Trash2, Edit, MessageSquare, Download, Lock } from 'lucide-react';
+import { Building2, Plus, Briefcase, MapPin, Globe, Search, ChevronDown, ChevronUp, Users as UsersIcon, Filter, SortAsc, Eye, Mail, FileText, CheckCircle, XCircle, Clock, Trash2, Edit, MessageSquare, Download, Lock, BarChart3 } from 'lucide-react';
 import { toISTDate } from '../utils/time';
 
 const CURRENCIES = ['INR', 'USD', 'EUR', 'GBP'];
@@ -40,6 +40,7 @@ export default function CompanyPage() {
   const [jobForm, setJobForm] = useState({
     title: '', description: '', location: '', salary_min: '', salary_max: '',
     salary_currency: 'INR', job_type: 'full_time', location_type: 'onsite', application_deadline: '',
+    required_skills: '',
   });
   const [postingJobFor, setPostingJobFor] = useState(null);
   const [selectedJob, setSelectedJob] = useState(null);
@@ -47,6 +48,7 @@ export default function CompanyPage() {
   const [loadingApplicants, setLoadingApplicants] = useState(false);
   const [editingJob, setEditingJob] = useState(null);
   const [editJobForm, setEditJobForm] = useState({});
+  const [matchScores, setMatchScores] = useState({});
 
   const today = new Date().toISOString().split('T')[0];
 
@@ -133,11 +135,13 @@ export default function CompanyPage() {
         company_id: postingJobFor,
         salary_min: jobForm.salary_min || null,
         salary_max: jobForm.salary_max || null,
+        required_skills: jobForm.required_skills ? jobForm.required_skills.split(',').map(s => s.trim()).filter(Boolean) : null,
       });
       setPostingJobFor(null);
       setJobForm({
         title: '', description: '', location: '', salary_min: '', salary_max: '',
         salary_currency: 'INR', job_type: 'full_time', location_type: 'onsite', application_deadline: '',
+        required_skills: '',
       });
       if (tab === 'jobs') fetchMyJobs();
     } catch (err) {
@@ -190,6 +194,16 @@ export default function CompanyPage() {
       window.URL.revokeObjectURL(url);
     } catch (err) {
       alert(err.response?.data?.detail || 'Failed to download resume. Check your TOTP code and access permissions.');
+    }
+  };
+
+  const fetchMatchScore = async (resumeId, jobId, appId) => {
+    setMatchScores(prev => ({ ...prev, [appId]: { loading: true } }));
+    try {
+      const res = await api.get(`/resumes/${resumeId}/match/${jobId}`);
+      setMatchScores(prev => ({ ...prev, [appId]: { loading: false, ...res.data } }));
+    } catch (err) {
+      setMatchScores(prev => ({ ...prev, [appId]: { loading: false, error: err.response?.data?.detail || 'Match failed' } }));
     }
   };
 
@@ -508,7 +522,33 @@ export default function CompanyPage() {
                                           <Download className="h-3 w-3" /> Resume
                                         </button>
                                       )}
+                                      {app.resume_id && (
+                                        <button onClick={() => fetchMatchScore(app.resume_id, job.id, app.id)}
+                                          disabled={matchScores[app.id]?.loading}
+                                          className="text-xs px-2 py-1 bg-orange-50 text-orange-700 rounded-lg hover:bg-orange-100 flex items-center gap-1 disabled:opacity-50">
+                                          <BarChart3 className="h-3 w-3" /> {matchScores[app.id]?.loading ? 'Matching...' : 'Match Score'}
+                                        </button>
+                                      )}
                                     </div>
+                                    {matchScores[app.id] && !matchScores[app.id].loading && (
+                                      <div className="mt-2 p-2 rounded text-xs border-l-2 border-orange-400 bg-orange-50">
+                                        {matchScores[app.id].error ? (
+                                          <p className="text-red-600">{matchScores[app.id].error}</p>
+                                        ) : (
+                                          <>
+                                            <p className="font-semibold text-orange-800">
+                                              Match Score: <span className={`${matchScores[app.id].score >= 70 ? 'text-green-700' : matchScores[app.id].score >= 40 ? 'text-yellow-700' : 'text-red-700'}`}>{matchScores[app.id].score}%</span>
+                                            </p>
+                                            {matchScores[app.id].matched_skills?.length > 0 && (
+                                              <p className="text-green-700 mt-1">Matched: {matchScores[app.id].matched_skills.join(', ')}</p>
+                                            )}
+                                            {matchScores[app.id].missing_skills?.length > 0 && (
+                                              <p className="text-red-600 mt-1">Missing: {matchScores[app.id].missing_skills.join(', ')}</p>
+                                            )}
+                                          </>
+                                        )}
+                                      </div>
+                                    )}
                                   </div>
 
                                   {/* Status Update Controls */}
@@ -568,6 +608,11 @@ export default function CompanyPage() {
                 <label className="text-sm font-medium text-gray-700 mb-1 block">Description <span className="text-red-500">*</span></label>
                 <textarea value={jobForm.description} onChange={(e) => setJobForm(f => ({ ...f, description: e.target.value }))}
                   required maxLength={10000} className={inputClass + " h-24 resize-none"} placeholder="Job description..." />
+              </div>
+              <div>
+                <label className="text-sm font-medium text-gray-700 mb-1 block">Required Skills</label>
+                <input type="text" value={jobForm.required_skills} onChange={(e) => setJobForm(f => ({ ...f, required_skills: e.target.value }))}
+                  maxLength={500} className={inputClass} placeholder="Python, React, PostgreSQL (comma-separated)" />
               </div>
               <div>
                 <label className="text-sm font-medium text-gray-700 mb-1 block">Location</label>

@@ -111,7 +111,7 @@ if [[ "$FRONTEND_RUNNING" = false ]]; then
     sleep 3
     if kill -0 "$FRONTEND_PID" 2>/dev/null; then
         echo -e "${GREEN}✔  Frontend started (PID $FRONTEND_PID)${NC}"
-        echo -e "   App URL:  ${CYAN}http://localhost:5173${NC}"
+        echo -e "   App URL:  ${CYAN}https://localhost:5173${NC}"
         echo -e "   Log file: ${CYAN}$LOG_DIR/frontend.log${NC}"
     else
         echo -e "${RED}✘  Frontend failed to start. Check $LOG_DIR/frontend.log${NC}"
@@ -125,7 +125,7 @@ echo ""
 echo -e "${GREEN}╔══════════════════════════════════════════════╗${NC}"
 echo -e "${GREEN}║       🛡️  VajraKavach is running!            ║${NC}"
 echo -e "${GREEN}╠══════════════════════════════════════════════╣${NC}"
-echo -e "${GREEN}║  Frontend:  http://localhost:5173            ║${NC}"
+echo -e "${GREEN}║  Frontend:  https://localhost:5173           ║${NC}"
 echo -e "${GREEN}║  Backend:   http://localhost:8000            ║${NC}"
 echo -e "${GREEN}║  API Docs:  http://localhost:8000/api/docs   ║${NC}"
 echo -e "${GREEN}╠══════════════════════════════════════════════╣${NC}"

@@ -1,0 +1,13 @@
+Project Milestone - 1 :
+Submit a report containing the following:
+1. Finalize technology stack.
+2. Configure HTTPS with self-signed or CA-issued certificates: Give Screenshots
+3. Deploy a skeleton application on the VM: Give Screenshots.
+
+Project Milestone 2 :
+Submit a report containing the following:
+Secure user registration and login.
+TOTP verification.
+User profile management.
+Secure resume upload with encryption.
+Basic admin dashboard.

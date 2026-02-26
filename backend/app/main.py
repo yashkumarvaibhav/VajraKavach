@@ -24,6 +24,7 @@ from app.routes.applications import router as applications_router
 from app.routes.messages import router as messages_router
 from app.routes.resumes import router as resumes_router
 from app.routes.admin import router as admin_router
+from app.routes.reports import router as reports_router
 
 # Configure logging
 logging.basicConfig(
@@ -117,6 +118,7 @@ app.include_router(applications_router)
 app.include_router(messages_router)
 app.include_router(resumes_router)
 app.include_router(admin_router)
+app.include_router(reports_router)
 
 
 # ── Root endpoint ────────────────────────────────────────────────────

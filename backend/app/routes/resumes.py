@@ -263,3 +263,85 @@ async def delete_resume(
     )
 
     await db.delete(resume)
+
+
+@router.get("/{resume_id}/parse")
+async def parse_resume(
+    resume_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Parse a resume and extract text and skills."""
+    from app.services.resume_parser import extract_text, extract_skills_from_text
+
+    result = await db.execute(select(Resume).where(Resume.id == resume_id))
+    resume = result.scalar_one_or_none()
+    if not resume:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Resume not found")
+
+    # Allow owner, admin, or recruiter to parse
+    is_owner = str(resume.user_id) == str(current_user.id)
+    is_admin = current_user.role.value == "admin"
+    is_recruiter = current_user.role.value == "recruiter"
+    if not (is_owner or is_admin or is_recruiter):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
+
+    try:
+        decrypted_data = read_decrypted_resume(resume.encrypted_path)
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to decrypt resume")
+
+    text = extract_text(decrypted_data, resume.mime_type or "application/pdf")
+    skills = extract_skills_from_text(text)
+
+    return {
+        "resume_id": str(resume.id),
+        "filename": resume.original_filename,
+        "extracted_text_length": len(text),
+        "extracted_skills": skills,
+        "text_preview": text[:500] if text else "",
+    }
+
+
+@router.get("/{resume_id}/match/{job_id}")
+async def match_resume_to_job(
+    resume_id: str,
+    job_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Match a resume's skills against a job's required skills."""
+    from app.services.resume_parser import extract_text, extract_skills_from_text, compute_match_score
+    from app.models.job import Job
+
+    result = await db.execute(select(Resume).where(Resume.id == resume_id))
+    resume = result.scalar_one_or_none()
+    if not resume:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Resume not found")
+
+    job_result = await db.execute(select(Job).where(Job.id == job_id))
+    job = job_result.scalar_one_or_none()
+    if not job:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+
+    try:
+        decrypted_data = read_decrypted_resume(resume.encrypted_path)
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to decrypt resume")
+
+    text = extract_text(decrypted_data, resume.mime_type or "application/pdf")
+    resume_skills = extract_skills_from_text(text)
+    required_skills = job.required_skills or []
+
+    match = compute_match_score(resume_skills, required_skills)
+
+    return {
+        "resume_id": str(resume.id),
+        "job_id": str(job.id),
+        "job_title": job.title,
+        "resume_skills": resume_skills,
+        "required_skills": required_skills,
+        "match_score": match["score"],
+        "matched_skills": match["matched"],
+        "missing_skills": match["missing"],
+    }

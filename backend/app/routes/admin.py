@@ -20,6 +20,7 @@ from app.utils.ip import get_client_ip
 from app.services.auth_service import hash_password
 from app.services.totp_service import generate_totp_secret, get_totp_uri, generate_qr_code_base64
 from app.services.pki_service import generate_rsa_key_pair
+from app.services.encryption_service import encrypt_data
 
 router = APIRouter(prefix="/api/admin", tags=["Admin"])
 
@@ -199,6 +200,7 @@ async def create_admin(
     hashed_pw = hash_password(req.password)
     totp_secret = generate_totp_secret()
     private_key_pem, public_key_pem = generate_rsa_key_pair()
+    encrypted_priv = encrypt_data(private_key_pem.encode("utf-8")).decode("utf-8")
 
     admin_id = uuid.uuid4()
     admin = User(
@@ -210,6 +212,7 @@ async def create_admin(
         totp_secret=totp_secret,
         totp_verified=False,
         public_key=public_key_pem,
+        encrypted_private_key=encrypted_priv,
         is_active=True,
         is_suspended=False,
     )
@@ -483,4 +486,79 @@ async def list_all_resumes(
             "uploaded_at": r.Resume.uploaded_at.isoformat() if r.Resume.uploaded_at else None,
         }
         for r in rows
+    ]
+
+
+# ── Blockchain Audit Endpoints ─────────────────────────────────────
+
+@router.post("/blockchain/mine")
+async def mine_blockchain_block(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role("admin")),
+):
+    """Mine a new blockchain block from pending audit log entries."""
+    from app.services.blockchain_service import create_block
+    block = await create_block(db)
+    if not block:
+        return {"message": "No pending entries to mine", "block": None}
+
+    await create_audit_log(
+        db=db,
+        action="blockchain.block_mined",
+        user_id=str(current_user.id),
+        resource="audit_block",
+        resource_id=str(block.id),
+        details={"block_number": block.block_number, "entry_count": block.entry_count},
+        ip_address=get_client_ip(request),
+    )
+
+    return {
+        "message": f"Block #{block.block_number} mined successfully",
+        "block": {
+            "id": str(block.id),
+            "block_number": block.block_number,
+            "block_hash": block.block_hash,
+            "previous_block_hash": block.previous_block_hash,
+            "merkle_root": block.merkle_root,
+            "nonce": block.nonce,
+            "entry_count": block.entry_count,
+            "timestamp": block.timestamp.isoformat(),
+        },
+    }
+
+
+@router.get("/blockchain/verify")
+async def verify_blockchain_integrity(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role("admin")),
+):
+    """Verify the entire blockchain's integrity."""
+    from app.services.blockchain_service import verify_blockchain
+    result = await verify_blockchain(db)
+    return result
+
+
+@router.get("/blockchain/blocks")
+async def list_blockchain_blocks(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role("admin")),
+):
+    """List all blockchain blocks."""
+    from app.models.audit_block import AuditBlock
+    from sqlalchemy import select as sel
+    result = await db.execute(sel(AuditBlock).order_by(AuditBlock.block_number.desc()))
+    blocks = result.scalars().all()
+    return [
+        {
+            "id": str(b.id),
+            "block_number": b.block_number,
+            "block_hash": b.block_hash,
+            "previous_block_hash": b.previous_block_hash,
+            "merkle_root": b.merkle_root,
+            "nonce": b.nonce,
+            "entry_count": b.entry_count,
+            "timestamp": b.timestamp.isoformat(),
+        }
+        for b in blocks
     ]

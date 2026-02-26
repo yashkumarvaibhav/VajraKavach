@@ -1,0 +1,1 @@
+"""VajraKavach — Pydantic Schemas Package."""

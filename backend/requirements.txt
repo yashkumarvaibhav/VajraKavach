@@ -1,0 +1,33 @@
+# FastAPI & Server
+fastapi==0.109.2
+uvicorn[standard]==0.27.1
+python-multipart==0.0.9
+
+# Database
+sqlalchemy==2.0.27
+asyncpg==0.29.0
+alembic==1.13.1
+psycopg2-binary==2.9.9
+
+# Authentication & Security
+python-jose[cryptography]==3.3.0
+passlib[argon2]==1.7.4
+argon2-cffi==23.1.0
+pyotp==2.9.0
+qrcode[pil]==7.4.2
+
+# Encryption & PKI
+cryptography==42.0.5
+
+# Validation & Config
+pydantic[email]==2.6.1
+pydantic-settings==2.1.0
+python-dotenv==1.0.1
+
+# CORS & Middleware
+starlette==0.36.3
+
+# Utilities
+python-dateutil==2.8.2
+aiofiles==23.2.1
+Pillow==10.2.0

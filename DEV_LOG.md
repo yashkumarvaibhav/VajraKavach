@@ -183,3 +183,44 @@ All timestamps are in **Indian Standard Time (IST, UTC+5:30)**.
 | Frontend Vite dev server running | Done |
 
 **Next Steps:** End-to-end browser testing, resume upload/download test, profile management test, cleanup test data.
+
+---
+
+## Session 3 — 2026-02-26
+
+### [06:20 IST] Landing Page
+- Created `LandingPage.jsx` — hero section with tagline, feature cards (TOTP, encrypted resumes, E2E messaging, audit logs), trust/tech section, footer
+- Updated `App.jsx` routing: `/` now shows landing page for guests, redirects to `/dashboard` for logged-in users
+- Login/Register pages now redirect to `/dashboard` if already authenticated
+- Navbar logout redirects to `/` (landing) instead of `/login`
+
+### [06:30 IST] Enhanced Profile Page
+- **Name editing:** Full name is now editable (was read-only). Uses new `PUT /api/users/me` endpoint
+- **Education section:** Structured entries with fields for institution, degree, field of study, start/end year, description. Add/edit/remove with inline forms
+- **Experience section:** Structured entries with company, title, location, start/end date (month picker), "currently working" checkbox, description. Add/edit/remove
+- **Profile picture:** Upload with hover overlay camera icon, max 5 MB (jpg/png/webp/gif), stored in `uploads/avatars/`
+
+### [06:35 IST] Backend — New Endpoints
+- `PUT /api/users/me` — update full_name and phone on the User model
+- `POST /api/users/me/profile-picture` — upload avatar (validates type & size, saves as `<user_id>.<ext>`)
+- `GET /api/users/me/profile-picture/{filename}` — serve avatar file
+- `UserProfileResponse` schema now includes `full_name` and `email` from the User record
+- Added `UserNameUpdate` schema for name/phone updates
+- All verified with curl tests — name update returns updated data
+
+### [06:40 IST] Git Push
+- Committed and pushed: `674a351`
+
+### Summary — Session 3 Deliverables
+| Item | Status |
+|------|--------|
+| Landing page with hero + features | Done |
+| Guest → landing, auth → dashboard routing | Done |
+| Name field editable in profile | Done |
+| Education entries (structured JSON) | Done |
+| Experience entries (structured JSON) | Done |
+| Profile picture upload + display | Done |
+| Backend PUT /users/me endpoint | Done |
+| Backend profile-picture upload/serve | Done |
+
+**Next Steps:** Browser-test the full flow, admin login walkthrough, resume encryption test.

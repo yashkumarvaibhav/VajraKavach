@@ -18,8 +18,8 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
-    # Encryption
-    FERNET_SECRET_KEY: str = "placeholder-will-generate-on-first-run"
+    # Encryption (MUST be a stable Fernet key — never use placeholder)
+    FERNET_SECRET_KEY: str = ""
 
     # TOTP
     TOTP_ISSUER: str = "VajraKavach"

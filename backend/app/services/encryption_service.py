@@ -11,11 +11,12 @@ from app.config import settings
 def _get_fernet() -> Fernet:
     """Get or create a Fernet cipher instance."""
     key = settings.FERNET_SECRET_KEY
-    # If placeholder, generate a key (dev convenience — in prod this should be fixed)
-    if key.startswith("placeholder"):
-        key = Fernet.generate_key().decode()
-        # NOTE: In production, persist this key securely
-    # Ensure key is valid Fernet key (url-safe base64, 32 bytes)
+    if not key or key.startswith("placeholder"):
+        raise RuntimeError(
+            "FERNET_SECRET_KEY is not configured! "
+            "Set a stable Fernet key in .env (generate with: "
+            "python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')"
+        )
     return Fernet(key.encode() if isinstance(key, str) else key)
 
 

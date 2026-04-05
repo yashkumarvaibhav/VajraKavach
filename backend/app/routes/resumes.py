@@ -129,7 +129,7 @@ async def download_resume(
     if check_totp_lockout(current_user.email):
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Too many failed TOTP attempts. Try again later.")
 
-    if not verify_totp(current_user.totp_secret, totp_token):
+    if not verify_totp(decrypt_totp_secret(current_user.totp_secret), totp_token):
         record_totp_failure(current_user.email)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid TOTP token")
 
@@ -333,6 +333,12 @@ async def match_resume_to_job(
     resume = result.scalar_one_or_none()
     if not resume:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Resume not found")
+
+    # Authorization: owner or admin only
+    is_owner = str(resume.user_id) == str(current_user.id)
+    is_admin = current_user.role.value in ("admin", "platform_admin")
+    if not (is_owner or is_admin):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to access this resume")
 
     job_result = await db.execute(select(Job).where(Job.id == job_id))
     job = job_result.scalar_one_or_none()

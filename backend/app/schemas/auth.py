@@ -79,7 +79,7 @@ class RefreshTokenRequest(BaseModel):
 
 class PasswordChangeRequest(BaseModel):
     current_password: str
-    new_password: str = Field(..., min_length=8, max_length=16)
+    new_password: str = Field(..., min_length=8, max_length=72)
     totp_token: str = Field(..., min_length=6, max_length=6)
 
     @field_validator("new_password")
@@ -98,7 +98,7 @@ class ForgotPasswordRequest(BaseModel):
     """Reset password using email + TOTP verification."""
     email: EmailStr
     totp_token: str = Field(..., min_length=6, max_length=6)
-    new_password: str = Field(..., min_length=8, max_length=16)
+    new_password: str = Field(..., min_length=8, max_length=72)
 
     @field_validator("new_password")
     @classmethod

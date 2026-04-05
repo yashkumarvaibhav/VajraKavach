@@ -16,6 +16,7 @@ from app.schemas.company import CompanyCreate, CompanyUpdate, CompanyResponse
 from app.dependencies import get_current_user, require_role
 from app.services.audit_service import create_audit_log
 from app.utils.ip import get_client_ip
+from app.utils.sanitize import escape_like
 
 router = APIRouter(prefix="/api/companies", tags=["Companies"])
 
@@ -70,10 +71,11 @@ async def search_companies(
     """Search companies by name or location (accessible to all authenticated users)."""
     query = select(Company)
     if q:
+        eq = escape_like(q)
         query = query.where(
             or_(
-                Company.name.ilike(f"%{q}%"),
-                Company.location.ilike(f"%{q}%"),
+                Company.name.ilike(f"%{eq}%"),
+                Company.location.ilike(f"%{eq}%"),
             )
         )
     query = query.order_by(Company.name).limit(50)

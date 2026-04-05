@@ -85,8 +85,6 @@ async def register(
     role = UserRole.USER
     if req.role == "recruiter":
         role = UserRole.RECRUITER
-    elif req.role == "admin":
-        role = UserRole.ADMIN
 
     hashed_pw = hash_password(req.password)
     totp_secret = generate_totp_secret()
@@ -318,6 +316,8 @@ async def refresh_token(
 
     new_access_token = create_access_token(token_data)
     new_refresh_token = create_refresh_token(token_data)
+    # Revoke the old refresh token to prevent reuse
+    revoke_token(refresh_token_value)
     _set_auth_cookies(response, request, new_access_token, new_refresh_token)
 
     return TokenResponse(
@@ -393,11 +393,8 @@ async def forgot_password(
     result = await db.execute(select(User).where(User.email == req.email))
     user = result.scalar_one_or_none()
 
-    if not user:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No account found with this email")
-
-    if not user.totp_secret:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="TOTP not configured for this account")
+    if not user or not user.totp_secret:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or TOTP token")
 
     if not verify_totp(decrypt_totp_secret(user.totp_secret), req.totp_token):
         await create_audit_log(
@@ -407,7 +404,7 @@ async def forgot_password(
             details={"email": req.email, "reason": "invalid_totp"},
             ip_address=get_client_ip(request),
         )
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid TOTP token")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or TOTP token")
 
     user.hashed_password = hash_password(req.new_password)
 

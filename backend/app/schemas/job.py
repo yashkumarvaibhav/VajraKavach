@@ -3,7 +3,7 @@ VajraKavach — Job & Application Schemas
 """
 
 from pydantic import BaseModel, Field, field_validator
-from typing import Optional, List
+from typing import Optional, List, Literal
 from datetime import date, datetime
 
 
@@ -16,8 +16,8 @@ class JobCreate(BaseModel):
     description: str = Field(..., min_length=1, max_length=10000)
     required_skills: Optional[List[str]] = None
     location: Optional[str] = Field(None, max_length=255)
-    location_type: str = "onsite"  # remote, onsite, hybrid
-    job_type: str = "full_time"    # full_time, part_time, internship, contract
+    location_type: Literal["remote", "onsite", "hybrid"] = "onsite"
+    job_type: Literal["full_time", "part_time", "internship", "contract"] = "full_time"
     salary_min: Optional[str] = None
     salary_max: Optional[str] = None
     salary_currency: str = "INR"
@@ -120,7 +120,7 @@ class ApplicationCreate(BaseModel):
 
 
 class ApplicationStatusUpdate(BaseModel):
-    status: str   # applied, reviewed, interviewed, rejected, offer
+    status: Literal["applied", "reviewed", "interviewed", "rejected", "offer"]
     recruiter_notes: Optional[str] = Field(None, max_length=5000)
 
 

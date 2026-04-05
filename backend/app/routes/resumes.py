@@ -19,7 +19,7 @@ from app.services.resume_service import save_encrypted_resume, read_decrypted_re
 from app.services.pki_service import verify_signature
 from app.services.audit_service import create_audit_log
 from app.utils.ip import get_client_ip
-from app.services.totp_service import verify_totp
+from app.services.totp_service import verify_totp, decrypt_totp_secret
 
 router = APIRouter(prefix="/api/resumes", tags=["Resumes"])
 
@@ -241,7 +241,7 @@ async def delete_resume(
     # Verify TOTP first (sensitive operation)
     if not current_user.totp_secret:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="TOTP not configured")
-    if not verify_totp(current_user.totp_secret, totp_token):
+    if not verify_totp(decrypt_totp_secret(current_user.totp_secret), totp_token):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid TOTP token")
 
     result = await db.execute(select(Resume).where(Resume.id == resume_id))
@@ -282,11 +282,10 @@ async def parse_resume(
     if not resume:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Resume not found")
 
-    # Allow owner, admin, or recruiter to parse
+    # Allow owner or admin to parse
     is_owner = str(resume.user_id) == str(current_user.id)
     is_admin = current_user.role.value in ("admin", "platform_admin")
-    is_recruiter = current_user.role.value == "recruiter"
-    if not (is_owner or is_admin or is_recruiter):
+    if not (is_owner or is_admin):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
 
     try:

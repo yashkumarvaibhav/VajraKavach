@@ -270,6 +270,9 @@ async def upload_profile_picture(
     magic_valid = False
     for magic, _ in IMAGE_MAGIC_BYTES.items():
         if contents[:len(magic)] == magic:
+            # Extra check for WebP: must have 'WEBP' at offset 8
+            if magic == b'RIFF' and contents[8:12] != b'WEBP':
+                continue
             magic_valid = True
             break
     if not magic_valid:

@@ -101,3 +101,17 @@ class UserSearchResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class UserE2EEKeyUpdate(BaseModel):
+    public_key: str = Field(..., min_length=64)
+
+
+class UserE2EEKeyStatusResponse(BaseModel):
+    public_key: Optional[str] = None
+    has_server_private_key: bool
+
+
+class UserE2EEKeyMigrationResponse(BaseModel):
+    public_key: Optional[str] = None
+    private_key: Optional[str] = None

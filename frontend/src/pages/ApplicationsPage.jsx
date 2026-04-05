@@ -77,10 +77,10 @@ export default function ApplicationsPage() {
                 </span>
               </div>
 
-              {app.cover_letter && (
+              {app.cover_note && (
                 <div className="mt-3 flex items-start gap-2">
                   <FileText className="h-4 w-4 text-gray-400 mt-0.5 flex-shrink-0" />
-                  <p className="text-sm text-gray-600 line-clamp-2">{app.cover_letter}</p>
+                  <p className="text-sm text-gray-600 line-clamp-2">{app.cover_note}</p>
                 </div>
               )}
 

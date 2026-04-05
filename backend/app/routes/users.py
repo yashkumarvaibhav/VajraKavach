@@ -16,12 +16,14 @@ from app.models.connection import Connection, ConnectionStatus
 from app.schemas.user import (
     UserResponse, UserProfileUpdate, UserProfileResponse,
     ConnectionRequest, ConnectionResponse, UserNameUpdate,
-    UserSearchResponse,
+    UserSearchResponse, UserE2EEKeyUpdate,
+    UserE2EEKeyStatusResponse, UserE2EEKeyMigrationResponse,
 )
 from app.dependencies import get_current_user
 from app.services.audit_service import create_audit_log
 from app.utils.ip import get_client_ip
 from app.config import settings
+from app.services.encryption_service import decrypt_data
 
 router = APIRouter(prefix="/api/users", tags=["Users & Profiles"])
 
@@ -89,7 +91,7 @@ async def search_users(
     query = select(User).where(
         User.is_active == True,
         User.id != current_user.id,
-        User.role != UserRole.ADMIN,  # Hide admin users
+        User.role.notin_([UserRole.ADMIN, UserRole.PLATFORM_ADMIN]),  # Hide admin users
     )
     if q:
         query = query.where(
@@ -162,9 +164,91 @@ async def update_my_account(
     )
 
 
+@router.get("/me/e2ee-key/status", response_model=UserE2EEKeyStatusResponse)
+async def get_my_e2ee_key_status(
+    current_user: User = Depends(get_current_user),
+):
+    """Expose the current user's browser-managed E2EE key status."""
+    return UserE2EEKeyStatusResponse(
+        public_key=current_user.public_key,
+        has_server_private_key=bool(current_user.encrypted_private_key),
+    )
+
+
+@router.put("/me/e2ee-key", response_model=UserE2EEKeyStatusResponse)
+async def upsert_my_e2ee_public_key(
+    update: UserE2EEKeyUpdate,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Store the user's public key while keeping the private key browser-side only."""
+    current_user.public_key = update.public_key
+    current_user.encrypted_private_key = None
+    await db.flush()
+
+    await create_audit_log(
+        db=db,
+        action="user.e2ee_public_key_upsert",
+        user_id=str(current_user.id),
+        resource="user",
+        resource_id=str(current_user.id),
+        ip_address=get_client_ip(request),
+    )
+
+    return UserE2EEKeyStatusResponse(
+        public_key=current_user.public_key,
+        has_server_private_key=False,
+    )
+
+
+@router.post("/me/e2ee-key/migrate", response_model=UserE2EEKeyMigrationResponse)
+async def migrate_my_legacy_private_key(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """One-time migration path for legacy server-stored private keys."""
+    if not current_user.encrypted_private_key:
+        return UserE2EEKeyMigrationResponse(public_key=current_user.public_key, private_key=None)
+
+    try:
+        private_key = decrypt_data(current_user.encrypted_private_key.encode("utf-8")).decode("utf-8")
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to decrypt legacy private key for migration",
+        ) from exc
+
+    current_user.encrypted_private_key = None
+    await db.flush()
+
+    await create_audit_log(
+        db=db,
+        action="user.e2ee_private_key_migrated",
+        user_id=str(current_user.id),
+        resource="user",
+        resource_id=str(current_user.id),
+        ip_address=get_client_ip(request),
+    )
+
+    return UserE2EEKeyMigrationResponse(
+        public_key=current_user.public_key,
+        private_key=private_key,
+    )
+
+
 # ── Profile Picture ──────────────────────────────────────────────────
 
 ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
+ALLOWED_IMAGE_EXTENSIONS = {"jpg", "jpeg", "png", "webp", "gif"}
+IMAGE_MAGIC_BYTES = {
+    b'\xff\xd8\xff': 'jpg',        # JPEG
+    b'\x89PNG': 'png',             # PNG
+    b'GIF87a': 'gif',              # GIF87
+    b'GIF89a': 'gif',              # GIF89
+    b'RIFF': 'webp',               # WebP (RIFF container)
+}
 MAX_IMAGE_SIZE = 5 * 1024 * 1024  # 5 MB
 
 @router.post("/me/profile-picture")
@@ -182,7 +266,18 @@ async def upload_profile_picture(
     if len(contents) > MAX_IMAGE_SIZE:
         raise HTTPException(status_code=400, detail="Image must be under 5 MB")
 
+    # Validate magic bytes
+    magic_valid = False
+    for magic, _ in IMAGE_MAGIC_BYTES.items():
+        if contents[:len(magic)] == magic:
+            magic_valid = True
+            break
+    if not magic_valid:
+        raise HTTPException(status_code=400, detail="File content does not match a valid image format")
+
     ext = file.filename.rsplit('.', 1)[-1].lower() if '.' in file.filename else 'jpg'
+    if ext not in ALLOWED_IMAGE_EXTENSIONS:
+        raise HTTPException(status_code=400, detail="Invalid file extension")
     avatar_dir = os.path.join(settings.UPLOAD_DIR, "avatars")
     os.makedirs(avatar_dir, exist_ok=True)
     filename = f"{current_user.id}.{ext}"
@@ -215,7 +310,14 @@ async def upload_profile_picture(
 async def get_profile_picture(filename: str):
     """Serve a profile picture file."""
     from fastapi.responses import FileResponse
-    filepath = os.path.join(settings.UPLOAD_DIR, "avatars", filename)
+    # Prevent path traversal: strip directory separators and validate
+    safe_name = os.path.basename(filename)
+    if safe_name != filename or '..' in filename:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    avatar_dir = os.path.realpath(os.path.join(settings.UPLOAD_DIR, "avatars"))
+    filepath = os.path.realpath(os.path.join(avatar_dir, safe_name))
+    if not filepath.startswith(avatar_dir):
+        raise HTTPException(status_code=400, detail="Invalid filename")
     if not os.path.isfile(filepath):
         raise HTTPException(status_code=404, detail="Image not found")
     return FileResponse(filepath)
@@ -404,7 +506,7 @@ async def view_user_profile(
     # Do NOT expose it to visitors
 
     is_owner = str(current_user.id) == user_id
-    is_admin = current_user.role.value == "admin"
+    is_admin = current_user.role.value in ("admin", "platform_admin")
     for field, level in privacy.items():
         if field in response_data and not is_owner and not is_admin:
             if level == "private":

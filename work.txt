@@ -1,3 +1,6 @@
+CSE 345/545 : Foundations to Computer Security
+Secure Job Search & Professional Networking Platform
+
 Project Milestone - 1 :
 Submit a report containing the following:
 1. Finalize technology stack.

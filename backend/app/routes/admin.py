@@ -19,8 +19,6 @@ from app.services.audit_service import create_audit_log, verify_audit_chain
 from app.utils.ip import get_client_ip
 from app.services.auth_service import hash_password
 from app.services.totp_service import generate_totp_secret, get_totp_uri, generate_qr_code_base64
-from app.services.pki_service import generate_rsa_key_pair
-from app.services.encryption_service import encrypt_data
 
 router = APIRouter(prefix="/api/admin", tags=["Admin"])
 
@@ -43,7 +41,7 @@ async def list_all_users(
     page_size: int = Query(20, ge=1, le=100),
     role: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role("admin")),
+    current_user: User = Depends(require_role("admin", "platform_admin")),
 ):
     """List all users (admin only) — includes last known IP from audit logs."""
     query = select(User)
@@ -84,9 +82,9 @@ async def list_all_users(
 @router.get("/users/count")
 async def user_count(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role("admin")),
+    current_user: User = Depends(require_role("admin", "platform_admin")),
 ):
-    """Get total user count (admin only)."""
+    """Get total user count."""
     result = await db.execute(select(func.count(User.id)))
     count = result.scalar()
     return {"total_users": count}
@@ -97,9 +95,9 @@ async def suspend_user(
     user_id: str,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role("admin")),
+    current_user: User = Depends(require_role("platform_admin")),
 ):
-    """Suspend a user account (admin only)."""
+    """Suspend a user account (platform admin only)."""
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if not user:
@@ -129,9 +127,9 @@ async def activate_user(
     user_id: str,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role("admin")),
+    current_user: User = Depends(require_role("platform_admin")),
 ):
-    """Reactivate a suspended user (admin only)."""
+    """Reactivate a suspended user (platform admin only)."""
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if not user:
@@ -158,9 +156,9 @@ async def delete_user(
     user_id: str,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role("admin")),
+    current_user: User = Depends(require_role("platform_admin")),
 ):
-    """Delete a user account (admin only)."""
+    """Delete a user account (platform admin only)."""
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if not user:
@@ -190,29 +188,26 @@ async def create_admin(
     req: CreateAdminRequest,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role("admin")),
+    current_user: User = Depends(require_role("platform_admin")),
 ):
-    """Create a new admin account (admin only). Returns TOTP setup info."""
+    """Create a new platform admin account (platform admin only). Returns TOTP setup info."""
     existing = await db.execute(select(User).where(User.email == req.email))
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
 
     hashed_pw = hash_password(req.password)
     totp_secret = generate_totp_secret()
-    private_key_pem, public_key_pem = generate_rsa_key_pair()
-    encrypted_priv = encrypt_data(private_key_pem.encode("utf-8")).decode("utf-8")
-
     admin_id = uuid.uuid4()
     admin = User(
         id=admin_id,
         email=req.email,
         hashed_password=hashed_pw,
         full_name=req.full_name,
-        role=UserRole.ADMIN,
+        role=UserRole.PLATFORM_ADMIN,
         totp_secret=totp_secret,
         totp_verified=False,
-        public_key=public_key_pem,
-        encrypted_private_key=encrypted_priv,
+        public_key=None,
+        encrypted_private_key=None,
         is_active=True,
         is_suspended=False,
     )
@@ -251,19 +246,19 @@ async def promote_to_admin(
     user_id: str,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role("admin")),
+    current_user: User = Depends(require_role("platform_admin")),
 ):
-    """Promote an existing user to admin role (admin only)."""
+    """Promote an existing user to platform admin role (platform admin only)."""
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
-    if user.role == UserRole.ADMIN:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User is already an admin")
+    if user.role == UserRole.PLATFORM_ADMIN:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User is already a platform admin")
 
     old_role = user.role.value
-    user.role = UserRole.ADMIN
+    user.role = UserRole.PLATFORM_ADMIN
     await db.flush()
 
     await create_audit_log(
@@ -272,11 +267,11 @@ async def promote_to_admin(
         user_id=str(current_user.id),
         resource="user",
         resource_id=str(user.id),
-        details={"email": user.email, "old_role": old_role, "new_role": "admin"},
+        details={"email": user.email, "old_role": old_role, "new_role": "platform_admin"},
         ip_address=get_client_ip(request),
     )
 
-    return {"message": f"User {user.email} has been promoted to admin"}
+    return {"message": f"User {user.email} has been promoted to platform admin"}
 
 
 @router.put("/users/{user_id}/demote-admin")
@@ -284,9 +279,9 @@ async def demote_from_admin(
     user_id: str,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role("admin")),
+    current_user: User = Depends(require_role("platform_admin")),
 ):
-    """Remove admin privileges from a user (admin only)."""
+    """Remove platform admin privileges from a user (platform admin only)."""
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if not user:
@@ -295,9 +290,10 @@ async def demote_from_admin(
     if str(user.id) == str(current_user.id):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot demote yourself")
 
-    if user.role != UserRole.ADMIN:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User is not an admin")
+    if user.role not in (UserRole.ADMIN, UserRole.PLATFORM_ADMIN):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User is not an admin or platform admin")
 
+    old_role = user.role.value
     user.role = UserRole.USER
     await db.flush()
 
@@ -307,7 +303,7 @@ async def demote_from_admin(
         user_id=str(current_user.id),
         resource="user",
         resource_id=str(user.id),
-        details={"email": user.email, "old_role": "admin", "new_role": "user"},
+        details={"email": user.email, "old_role": old_role, "new_role": "user"},
         ip_address=get_client_ip(request),
     )
 
@@ -321,9 +317,9 @@ async def get_audit_logs(
     action: Optional[str] = None,
     user_id: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role("admin")),
+    current_user: User = Depends(require_role("admin", "platform_admin")),
 ):
-    """View audit logs with pagination and filtering (admin only)."""
+    """View audit logs with pagination and filtering."""
     query = select(AuditLog).order_by(AuditLog.created_at.desc())
 
     if action:
@@ -357,9 +353,9 @@ async def get_audit_logs(
 @router.get("/audit-logs/verify-integrity")
 async def verify_log_integrity(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role("admin")),
+    current_user: User = Depends(require_role("admin", "platform_admin")),
 ):
-    """Verify the tamper-evidence of the audit log chain (admin only)."""
+    """Verify the tamper-evidence of the audit log chain."""
     result = await verify_audit_chain(db)
     return result
 
@@ -367,7 +363,7 @@ async def verify_log_integrity(
 @router.get("/dashboard")
 async def admin_dashboard(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role("admin")),
+    current_user: User = Depends(require_role("admin", "platform_admin")),
 ):
     """Admin dashboard overview stats."""
     from app.models.company import Company
@@ -401,7 +397,7 @@ async def admin_dashboard(
 @router.get("/jobs")
 async def admin_list_jobs(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role("admin")),
+    current_user: User = Depends(require_role("admin", "platform_admin")),
 ):
     """List all jobs for admin management."""
     from app.models.job import Job
@@ -433,9 +429,9 @@ async def admin_delist_job(
     job_id: str,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role("admin")),
+    current_user: User = Depends(require_role("platform_admin")),
 ):
-    """Admin: delist (deactivate) or re-activate a job listing."""
+    """Delist (deactivate) or re-activate a job listing (platform admin only)."""
     from app.models.job import Job
 
     result = await db.execute(select(Job).where(Job.id == job_id))
@@ -464,9 +460,9 @@ async def admin_delist_job(
 @router.get("/resumes")
 async def list_all_resumes(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role("admin")),
+    current_user: User = Depends(require_role("admin", "platform_admin")),
 ):
-    """List all resumes (admin only). Download requires TOTP via /api/resumes/{id}/download."""
+    """List all resumes. Download requires TOTP via /api/resumes/{id}/download."""
     from app.models.resume import Resume
     result = await db.execute(
         select(Resume, User.full_name, User.email)
@@ -495,9 +491,9 @@ async def list_all_resumes(
 async def mine_blockchain_block(
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role("admin")),
+    current_user: User = Depends(require_role("platform_admin")),
 ):
-    """Mine a new blockchain block from pending audit log entries."""
+    """Mine a new blockchain block from pending audit log entries (platform admin only)."""
     from app.services.blockchain_service import create_block
     block = await create_block(db)
     if not block:
@@ -531,7 +527,7 @@ async def mine_blockchain_block(
 @router.get("/blockchain/verify")
 async def verify_blockchain_integrity(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role("admin")),
+    current_user: User = Depends(require_role("admin", "platform_admin")),
 ):
     """Verify the entire blockchain's integrity."""
     from app.services.blockchain_service import verify_blockchain
@@ -542,7 +538,7 @@ async def verify_blockchain_integrity(
 @router.get("/blockchain/blocks")
 async def list_blockchain_blocks(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role("admin")),
+    current_user: User = Depends(require_role("admin", "platform_admin")),
 ):
     """List all blockchain blocks."""
     from app.models.audit_block import AuditBlock

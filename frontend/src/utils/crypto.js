@@ -52,6 +52,53 @@ async function importPrivateKey(pem) {
 }
 
 /**
+ * Encrypt plaintext for a single user using hybrid encryption.
+ */
+async function encryptForKey(text, pubKeyPem) {
+  // 1. Generate random AES-256 key
+  const aesKey = await crypto.subtle.generateKey(
+    { name: 'AES-GCM', length: 256 },
+    true,
+    ['encrypt']
+  );
+
+  // 2. Encrypt plaintext with AES-GCM
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const encoded = new TextEncoder().encode(text);
+  const ciphertext = await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv },
+    aesKey,
+    encoded
+  );
+
+  // 3. Export AES key and encrypt with RSA public key
+  const rawAesKey = await crypto.subtle.exportKey('raw', aesKey);
+  const rsaKey = await importPublicKey(pubKeyPem);
+  const encryptedAesKey = await crypto.subtle.encrypt(
+    { name: 'RSA-OAEP' },
+    rsaKey,
+    rawAesKey
+  );
+
+  // 4. Combine: [2-byte encryptedKeyLength][encryptedAESKey][12-byte IV][AES ciphertext]
+  const keyLenBuf = new Uint8Array(2);
+  keyLenBuf[0] = (encryptedAesKey.byteLength >> 8) & 0xff;
+  keyLenBuf[1] = encryptedAesKey.byteLength & 0xff;
+
+  const combined = new Uint8Array(
+    2 + encryptedAesKey.byteLength + 12 + ciphertext.byteLength
+  );
+  combined.set(keyLenBuf, 0);
+  combined.set(new Uint8Array(encryptedAesKey), 2);
+  combined.set(iv, 2 + encryptedAesKey.byteLength);
+  combined.set(new Uint8Array(ciphertext), 2 + encryptedAesKey.byteLength + 12);
+
+  let binary = '';
+  for (let i = 0; i < combined.length; i++) binary += String.fromCharCode(combined[i]);
+  return btoa(binary);
+}
+
+/**
  * Encrypt a plaintext message using hybrid encryption (AES-256-GCM + RSA-OAEP).
  * Encrypts for BOTH sender and recipient so both can decrypt from server.
  *
@@ -61,56 +108,32 @@ async function importPrivateKey(pem) {
  * @returns {string} JSON payload: E2E:{"s":"<for_sender>","r":"<for_recipient>"}
  */
 export async function encryptMessage(plaintext, recipientPublicKeyPem, senderPublicKeyPem) {
-  const encryptForKey = async (text, pubKeyPem) => {
-    // 1. Generate random AES-256 key
-    const aesKey = await crypto.subtle.generateKey(
-      { name: 'AES-GCM', length: 256 },
-      true,
-      ['encrypt']
-    );
-
-    // 2. Encrypt plaintext with AES-GCM
-    const iv = crypto.getRandomValues(new Uint8Array(12));
-    const encoded = new TextEncoder().encode(text);
-    const ciphertext = await crypto.subtle.encrypt(
-      { name: 'AES-GCM', iv },
-      aesKey,
-      encoded
-    );
-
-    // 3. Export AES key and encrypt with RSA public key
-    const rawAesKey = await crypto.subtle.exportKey('raw', aesKey);
-    const rsaKey = await importPublicKey(pubKeyPem);
-    const encryptedAesKey = await crypto.subtle.encrypt(
-      { name: 'RSA-OAEP' },
-      rsaKey,
-      rawAesKey
-    );
-
-    // 4. Combine: [2-byte encryptedKeyLength][encryptedAESKey][12-byte IV][AES ciphertext]
-    const keyLenBuf = new Uint8Array(2);
-    keyLenBuf[0] = (encryptedAesKey.byteLength >> 8) & 0xff;
-    keyLenBuf[1] = encryptedAesKey.byteLength & 0xff;
-
-    const combined = new Uint8Array(
-      2 + encryptedAesKey.byteLength + 12 + ciphertext.byteLength
-    );
-    combined.set(keyLenBuf, 0);
-    combined.set(new Uint8Array(encryptedAesKey), 2);
-    combined.set(iv, 2 + encryptedAesKey.byteLength);
-    combined.set(new Uint8Array(ciphertext), 2 + encryptedAesKey.byteLength + 12);
-
-    let binary = '';
-    for (let i = 0; i < combined.length; i++) binary += String.fromCharCode(combined[i]);
-    return btoa(binary);
-  };
-
   const forRecipient = await encryptForKey(plaintext, recipientPublicKeyPem);
   const forSender = senderPublicKeyPem
     ? await encryptForKey(plaintext, senderPublicKeyPem)
     : null;
 
   return 'E2E:' + JSON.stringify({ s: forSender, r: forRecipient });
+}
+
+/**
+ * Encrypt a message for every participant in a small group conversation.
+ *
+ * @param {string} plaintext
+ * @param {Record<string, string>} recipientPublicKeysByUserId - { userId: publicKeyPem }
+ * @returns {string} JSON payload: E2EG:{"<user_id>":"<blob>"}
+ */
+export async function encryptGroupMessage(plaintext, recipientPublicKeysByUserId) {
+  const entries = Object.entries(recipientPublicKeysByUserId || {}).filter(([, pubKeyPem]) => !!pubKeyPem);
+  if (entries.length === 0) {
+    throw new Error('No recipient public keys available for group encryption');
+  }
+
+  const encryptedEntries = await Promise.all(
+    entries.map(async ([userId, pubKeyPem]) => [userId, await encryptForKey(plaintext, pubKeyPem)])
+  );
+
+  return 'E2EG:' + JSON.stringify(Object.fromEntries(encryptedEntries));
 }
 
 /**
@@ -156,13 +179,20 @@ async function decryptBlob(base64Payload, privateKeyPem) {
  * @param {string} payload - The stored ciphertext (E2E:{...} format)
  * @param {string} privateKeyPem - User's RSA private key
  * @param {boolean} isSender - Whether the current user is the sender
+ * @param {string} userId - Current user id, required for group payloads
  * @returns {string} Decrypted plaintext
  */
-export async function decryptMessage(payload, privateKeyPem, isSender) {
+export async function decryptMessage(payload, privateKeyPem, isSender, userId) {
   if (payload.startsWith('E2E:')) {
     const json = JSON.parse(payload.slice(4));
     const blob = isSender ? json.s : json.r;
     if (!blob) throw new Error('No encrypted blob for this role');
+    return await decryptBlob(blob, privateKeyPem);
+  }
+  if (payload.startsWith('E2EG:')) {
+    const json = JSON.parse(payload.slice(5));
+    const blob = json?.[userId];
+    if (!blob) throw new Error('No encrypted blob for this user');
     return await decryptBlob(blob, privateKeyPem);
   }
   // Legacy single-blob format fallback
@@ -174,5 +204,5 @@ export async function decryptMessage(payload, privateKeyPem, isSender) {
  */
 export function isEncryptedPayload(text) {
   if (!text) return false;
-  return text.startsWith('E2E:');
+  return text.startsWith('E2E:') || text.startsWith('E2EG:');
 }

@@ -16,7 +16,8 @@ import enum
 class UserRole(str, enum.Enum):
     USER = "user"
     RECRUITER = "recruiter"
-    ADMIN = "admin"
+    ADMIN = "admin"                  # Read-only admin (can view everything, cannot take actions)
+    PLATFORM_ADMIN = "platform_admin"  # Full-power admin (formerly "admin")
 
 
 class User(Base):

@@ -38,7 +38,7 @@ cd backend
 python -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
 # Set up PostgreSQL and update .env
-uvicorn app.main:app --reload --port 8000
+python serve_https.py
 ```
 
 ### Frontend
@@ -49,7 +49,7 @@ npm run dev
 ```
 
 ### API Docs
-Visit `http://localhost:8000/api/docs` after starting the backend.
+Visit `https://localhost:8000/api/docs` after starting the backend.
 
 ## Project Structure
 

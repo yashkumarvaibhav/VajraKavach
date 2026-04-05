@@ -25,7 +25,7 @@ async def create_company(
     req: CompanyCreate,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role("recruiter", "admin")),
+    current_user: User = Depends(require_role("recruiter", "platform_admin")),
 ):
     """Create a new company page (recruiter or admin only)."""
     company = Company(
@@ -122,7 +122,7 @@ async def list_companies(
 @router.get("/my", response_model=list[CompanyResponse])
 async def my_companies(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role("recruiter", "admin")),
+    current_user: User = Depends(require_role("recruiter", "platform_admin")),
 ):
     """List companies owned by the current recruiter."""
     result = await db.execute(
@@ -183,7 +183,7 @@ async def update_company(
     if not company:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Company not found")
 
-    if str(company.admin_id) != str(current_user.id) and current_user.role.value != "admin":
+    if str(company.admin_id) != str(current_user.id) and current_user.role.value != "platform_admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
 
     update_data = req.model_dump(exclude_unset=True)
@@ -227,7 +227,7 @@ async def delete_company(
     if not company:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Company not found")
 
-    if str(company.admin_id) != str(current_user.id) and current_user.role.value != "admin":
+    if str(company.admin_id) != str(current_user.id) and current_user.role.value != "platform_admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
 
     await create_audit_log(

@@ -37,6 +37,14 @@ async def save_encrypted_resume(
     if file.content_type not in ALLOWED_MIME_TYPES:
         raise ValueError(f"Invalid file type: {file.content_type}. Only PDF and DOCX are allowed.")
 
+    # Validate magic bytes (server-side, not trusting client Content-Type alone)
+    if content[:4] == b'%PDF':
+        pass  # Valid PDF
+    elif content[:4] == b'PK\x03\x04':
+        pass  # Valid DOCX (ZIP-based)
+    else:
+        raise ValueError("File content does not match PDF or DOCX format.")
+
     # Compute integrity hash of original content
     file_hash = compute_sha256(content)
 

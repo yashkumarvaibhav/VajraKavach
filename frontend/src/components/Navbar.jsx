@@ -12,7 +12,9 @@ export default function Navbar() {
 
   const baseLink = "px-3 py-2 rounded-lg text-sm font-medium transition-colors";
 
-  const commonLinks = user?.role === 'admin'
+  const isAdminRole = user?.role === 'admin' || user?.role === 'platform_admin';
+
+  const commonLinks = isAdminRole
     ? [
         { to: '/dashboard', label: 'Dashboard' },
         { to: '/companies', label: 'Companies' },
@@ -37,6 +39,12 @@ export default function Navbar() {
       { to: '/security', label: 'Security' },
     ],
     admin: [
+      { to: '/admin', label: 'Admin Panel' },
+      { to: '/jobs', label: 'Jobs' },
+      { to: '/profile', label: 'Profile' },
+      { to: '/security', label: 'Security' },
+    ],
+    platform_admin: [
       { to: '/admin', label: 'Admin Panel' },
       { to: '/jobs', label: 'Jobs' },
       { to: '/profile', label: 'Profile' },

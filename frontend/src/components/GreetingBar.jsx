@@ -12,7 +12,7 @@ export default function GreetingBar() {
 
   if (!user) return null;
 
-  const roleLabel = user.role === 'admin' ? 'Admin' : user.role === 'recruiter' ? 'Recruiter' : 'Job Seeker';
+  const roleLabel = user.role === 'platform_admin' ? 'Platform Admin' : user.role === 'admin' ? 'Admin' : user.role === 'recruiter' ? 'Recruiter' : 'Job Seeker';
 
   const istTime = time.toLocaleTimeString('en-IN', {
     timeZone: 'Asia/Kolkata',

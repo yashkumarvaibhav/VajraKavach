@@ -165,7 +165,7 @@ async def get_my_reports(
 async def admin_get_all_reports(
     status_filter: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role("admin")),
+    current_user: User = Depends(require_role("admin", "platform_admin")),
 ):
     """Admin: Get all reports with optional status filter."""
     query = select(Report).order_by(Report.created_at.desc())
@@ -217,9 +217,9 @@ async def admin_update_report(
     req: ReportUpdateStatus,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role("admin")),
+    current_user: User = Depends(require_role("platform_admin")),
 ):
-    """Admin: Update a report's status."""
+    """Platform admin: Update a report's status."""
     try:
         new_status = ReportStatus(req.status)
     except ValueError:

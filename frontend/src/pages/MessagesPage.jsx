@@ -4,9 +4,11 @@ import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
 import { MessageSquare, Send, Plus, ArrowLeft, Users, Trash2, X, UserPlus, Lock } from 'lucide-react';
 import { toIST } from '../utils/time';
-import { encryptMessage, decryptMessage, isEncryptedPayload } from '../utils/crypto';
+import { encryptMessage, encryptGroupMessage, decryptMessage, isEncryptedPayload } from '../utils/crypto';
+import { getSessionE2EEKeyPair } from '../utils/e2eeKeyStore';
 
 import ReportButton from '../components/ReportButton';
+import KeyManagement from '../components/KeyManagement';
 
 export default function MessagesPage() {
   const { user } = useAuth();
@@ -23,8 +25,10 @@ export default function MessagesPage() {
   const [selectedMembers, setSelectedMembers] = useState([]);
   const [connections, setConnections] = useState([]);
   const [groupMembers, setGroupMembers] = useState([]);
+  const [keysUnavailable, setKeysUnavailable] = useState(false);
   const messagesEndRef = useRef(null);
   const pollRef = useRef(null);
+  const convPollRef = useRef(null);
 
   // E2E encryption state
   const privateKeyRef = useRef(null);
@@ -42,22 +46,31 @@ export default function MessagesPage() {
     }
   }, []);
 
-  // Fetch user's own private key and public key for E2E encryption
+  // Load the user's browser-managed private/public key pair for E2E encryption.
   useEffect(() => {
     const fetchKeys = async () => {
+      const sessionKeyPair = getSessionE2EEKeyPair(user?.email);
+      if (sessionKeyPair?.privateKeyPem) {
+        privateKeyRef.current = sessionKeyPair.privateKeyPem;
+        myPublicKeyRef.current = sessionKeyPair.publicKeyPem || null;
+        setKeysUnavailable(false);
+        return;
+      }
+
       try {
-        const [privRes, pubRes] = await Promise.all([
-          api.get('/messages/my-private-key'),
-          api.get(`/messages/user/${user?.id}/public-key`),
-        ]);
-        privateKeyRef.current = privRes.data.private_key;
+        const pubRes = await api.get(`/messages/user/${user?.id}/public-key`);
         myPublicKeyRef.current = pubRes.data.public_key;
+        privateKeyRef.current = null;
+        setKeysUnavailable(true);
       } catch (err) {
-        console.warn('Could not fetch E2E keys:', err);
+        privateKeyRef.current = null;
+        myPublicKeyRef.current = null;
+        setKeysUnavailable(true);
+        console.warn('Could not load local E2E keys:', err);
       }
     };
-    if (user?.id) fetchKeys();
-  }, [user?.id]);
+    if (user?.id && user?.email) fetchKeys();
+  }, [user?.id, user?.email]);
 
   // Helper: get recipient's public key (cached)
   const getRecipientPublicKey = useCallback(async (recipientId) => {
@@ -75,6 +88,9 @@ export default function MessagesPage() {
 
   useEffect(() => {
     fetchConversations();
+    // Poll conversation list every 10s to pick up new messages & re-sort
+    convPollRef.current = setInterval(fetchConversations, 10000);
+    return () => { if (convPollRef.current) clearInterval(convPollRef.current); };
   }, [fetchConversations]);
 
   // Handle ?newConv= URL parameter (e.g. from recruiter messaging an applicant)
@@ -109,7 +125,7 @@ export default function MessagesPage() {
           if (m.ciphertext && isEncryptedPayload(m.ciphertext) && privateKeyRef.current) {
             try {
               const isSender = m.sender_id === String(user?.id);
-              const plaintext = await decryptMessage(m.ciphertext, privateKeyRef.current, isSender);
+              const plaintext = await decryptMessage(m.ciphertext, privateKeyRef.current, isSender, String(user?.id));
               return { ...m, ciphertext: plaintext, _e2e: true };
             } catch {
               return { ...m, _e2e: true, _decryptFailed: true };
@@ -123,7 +139,7 @@ export default function MessagesPage() {
     } catch (err) {
       console.error('Failed to fetch messages:', err);
     }
-  }, []);
+  }, [user?.id]);
 
   useEffect(() => {
     if (activeConv && !activeConv.is_new) {
@@ -139,18 +155,41 @@ export default function MessagesPage() {
     if (!newMessage.trim() || !activeConv) return;
     setSendingMsg(true);
     try {
-      let ciphertext = newMessage.trim();
+      if (!privateKeyRef.current || !myPublicKeyRef.current) {
+        throw new Error('Your local E2EE keys are locked in this tab. Sign in again to continue messaging.');
+      }
 
-      // E2E encrypt for 1-to-1 conversations
-      if (!activeConv.is_group && activeConv.partner_id) {
-        const pubKey = await getRecipientPublicKey(activeConv.partner_id);
-        if (pubKey) {
-          try {
-            ciphertext = await encryptMessage(newMessage.trim(), pubKey, myPublicKeyRef.current);
-          } catch (encErr) {
-            console.warn('E2E encryption failed, sending plaintext:', encErr);
+      let ciphertext;
+
+      if (activeConv.is_group) {
+        const members = groupMembers.length > 0
+          ? groupMembers
+          : (await api.get(`/messages/groups/${activeConv.id}/members`)).data || [];
+
+        const publicKeysByUserId = {};
+        for (const member of members) {
+          if (member.user_id === String(user?.id)) {
+            publicKeysByUserId[member.user_id] = myPublicKeyRef.current;
+            continue;
+          }
+
+          const pubKey = await getRecipientPublicKey(member.user_id);
+          if (pubKey) {
+            publicKeysByUserId[member.user_id] = pubKey;
           }
         }
+
+        if (!publicKeysByUserId[String(user?.id)] && myPublicKeyRef.current) {
+          publicKeysByUserId[String(user?.id)] = myPublicKeyRef.current;
+        }
+
+        ciphertext = await encryptGroupMessage(newMessage.trim(), publicKeysByUserId);
+      } else {
+        const pubKey = await getRecipientPublicKey(activeConv.partner_id);
+        if (!pubKey || !myPublicKeyRef.current) {
+          throw new Error('Encryption keys are not available yet. Please try again.');
+        }
+        ciphertext = await encryptMessage(newMessage.trim(), pubKey, myPublicKeyRef.current);
       }
 
       const payload = { ciphertext };
@@ -175,9 +214,10 @@ export default function MessagesPage() {
         }
       } else {
         fetchMessages(activeConv.id);
+        fetchConversations();
       }
     } catch (err) {
-      alert(err.response?.data?.detail || 'Failed to send message');
+      alert(err.response?.data?.detail || err.message || 'Failed to send message');
     } finally {
       setSendingMsg(false);
     }
@@ -310,6 +350,17 @@ export default function MessagesPage() {
         <MessageSquare className="h-8 w-8 text-primary-600" />
         <h1 className="text-3xl font-bold text-gray-900">Messages</h1>
       </div>
+
+      {keysUnavailable && (
+        <KeyManagement
+          variant="banner"
+          onKeysImported={(keyPair) => {
+            privateKeyRef.current = keyPair.privateKeyPem;
+            myPublicKeyRef.current = keyPair.publicKeyPem;
+            setKeysUnavailable(false);
+          }}
+        />
+      )}
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden" style={{ height: '70vh' }}>
         <div className="flex h-full">

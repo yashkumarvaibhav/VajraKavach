@@ -135,7 +135,7 @@ async def download_resume(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Resume not found")
 
     is_owner = str(resume.user_id) == str(current_user.id)
-    is_admin = current_user.role.value == "admin"
+    is_admin = current_user.role.value in ("admin", "platform_admin")
 
     # Authorized recruiter: must have posted a job that this resume's owner applied to with this resume
     is_authorized_recruiter = False
@@ -174,11 +174,14 @@ async def download_resume(
         ip_address=get_client_ip(request),
     )
 
+    # Sanitize filename for Content-Disposition header
+    safe_filename = (resume.original_filename or "resume").replace('"', '').replace('\r', '').replace('\n', '').replace(';', '')
+
     return Response(
         content=decrypted_content,
         media_type=resume.mime_type or "application/octet-stream",
         headers={
-            "Content-Disposition": f'attachment; filename="{resume.original_filename}"',
+            "Content-Disposition": f'attachment; filename="{safe_filename}"',
         },
     )
 
@@ -246,7 +249,7 @@ async def delete_resume(
     if not resume:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Resume not found")
 
-    if str(resume.user_id) != str(current_user.id) and current_user.role.value != "admin":
+    if str(resume.user_id) != str(current_user.id) and current_user.role.value != "platform_admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
 
     if os.path.exists(resume.encrypted_path):
@@ -281,7 +284,7 @@ async def parse_resume(
 
     # Allow owner, admin, or recruiter to parse
     is_owner = str(resume.user_id) == str(current_user.id)
-    is_admin = current_user.role.value == "admin"
+    is_admin = current_user.role.value in ("admin", "platform_admin")
     is_recruiter = current_user.role.value == "recruiter"
     if not (is_owner or is_admin or is_recruiter):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")

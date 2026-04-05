@@ -6,6 +6,7 @@ Server stores ONLY ciphertext.
 
 import uuid
 import base64
+import json
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_, and_, func
@@ -70,6 +71,56 @@ async def _build_message_response(m: Message, sender_name: str = None) -> Messag
     )
 
 
+def _looks_like_hybrid_ciphertext(blob: str) -> bool:
+    """Basic structural validation for the WebCrypto payload format used by the client."""
+    try:
+        raw = base64.b64decode(blob, validate=True)
+    except Exception:
+        return False
+
+    if len(raw) < 2 + 12 + 16:
+        return False
+
+    key_len = (raw[0] << 8) | raw[1]
+    # [2-byte key length][encrypted key][12-byte IV][AES-GCM ciphertext+tag]
+    return key_len > 0 and len(raw) > 2 + key_len + 12
+
+
+def _is_valid_e2e_ciphertext(ciphertext: str, *, is_group: bool) -> bool:
+    """Reject plaintext submissions so the API only persists encrypted payloads."""
+    prefix = "E2EG:" if is_group else "E2E:"
+    if not isinstance(ciphertext, str) or not ciphertext.startswith(prefix):
+        return False
+
+    try:
+        payload = json.loads(ciphertext[len(prefix):])
+    except json.JSONDecodeError:
+        return False
+
+    if is_group:
+        return (
+            isinstance(payload, dict)
+            and bool(payload)
+            and all(
+                isinstance(user_id, str)
+                and user_id
+                and isinstance(blob, str)
+                and blob
+                and _looks_like_hybrid_ciphertext(blob)
+                for user_id, blob in payload.items()
+            )
+        )
+
+    if not isinstance(payload, dict):
+        return False
+
+    sender_blob = payload.get("s")
+    recipient_blob = payload.get("r")
+    return isinstance(recipient_blob, str) and bool(recipient_blob) and _looks_like_hybrid_ciphertext(recipient_blob) and (
+        sender_blob is None or (isinstance(sender_blob, str) and _looks_like_hybrid_ciphertext(sender_blob))
+    )
+
+
 @router.post("/", response_model=MessageResponse, status_code=status.HTTP_201_CREATED)
 async def send_message(
     req: MessageSend,
@@ -83,6 +134,7 @@ async def send_message(
     For group: provide conversation_id (recipient_id optional).
     """
     conversation_id = req.conversation_id
+    is_group_message = False
 
     if conversation_id:
         # Verify user is part of this conversation
@@ -93,6 +145,7 @@ async def send_message(
         if not conv:
             raise HTTPException(status_code=404, detail="Conversation not found")
 
+        is_group_message = bool(conv.is_group)
         if conv.is_group:
             # Check membership
             member_check = await db.execute(
@@ -120,6 +173,12 @@ async def send_message(
             db.add(conversation)
             await db.flush()
             conversation_id = str(conversation.id)
+
+    if not _is_valid_e2e_ciphertext(req.ciphertext, is_group=is_group_message):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Private messages must be client-side encrypted before submission.",
+        )
 
     message = Message(
         id=uuid.uuid4(),
@@ -206,6 +265,9 @@ async def list_conversations(
         if len(all_msgs) > 0 and len(visible_msgs) == 0 and not c.is_group:
             continue
 
+        # Get latest message timestamp for sorting
+        last_msg_time = max((m.created_at for m in visible_msgs), default=None) if visible_msgs else None
+
         partner_id = None
         partner_name = None
         member_count = None
@@ -245,7 +307,11 @@ async def list_conversations(
             partner_name=partner_name,
             member_count=member_count,
             created_at=c.created_at,
+            last_message_at=last_msg_time,
         ))
+
+    # Sort by most recent message first
+    responses.sort(key=lambda r: r.last_message_at or r.created_at, reverse=True)
 
     return responses
 
@@ -335,24 +401,13 @@ async def get_user_public_key(
 
 @router.get("/my-private-key")
 async def get_my_private_key(
-    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Get the current user's own private key (decrypted) for E2E decryption.
-    The private key is stored server-side encrypted with Fernet (AES)."""
-    if not current_user.encrypted_private_key:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="No private key found. Key was generated at registration.",
-        )
-    try:
-        decrypted = decrypt_data(current_user.encrypted_private_key.encode("utf-8"))
-        return {"private_key": decrypted.decode("utf-8")}
-    except Exception:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to decrypt private key",
-        )
+    """Legacy endpoint kept disabled after the browser-side key migration."""
+    raise HTTPException(
+        status_code=status.HTTP_410_GONE,
+        detail="Private keys are browser-managed now. Use the migration flow if needed.",
+    )
 
 
 @router.delete("/{message_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -609,9 +664,9 @@ async def create_announcement(
     req: AnnouncementCreate,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role("admin")),
+    current_user: User = Depends(require_role("platform_admin")),
 ):
-    """Create a server-side encrypted announcement (admin only).
+    """Create a server-side encrypted announcement (platform admin only).
     The title and content are encrypted at rest using Fernet (AES)."""
     # Encrypt title and content with server Fernet key
     title_enc = base64.b64encode(encrypt_data(req.title.encode("utf-8"))).decode("ascii")
@@ -695,9 +750,9 @@ async def delete_announcement(
     announcement_id: str,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role("admin")),
+    current_user: User = Depends(require_role("platform_admin")),
 ):
-    """Deactivate an announcement (admin only)."""
+    """Deactivate an announcement (platform admin only)."""
     result = await db.execute(
         select(Announcement).where(Announcement.id == announcement_id)
     )

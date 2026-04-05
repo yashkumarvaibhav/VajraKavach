@@ -4,6 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { Shield, UserPlus, CheckCircle, XCircle } from 'lucide-react';
 import VirtualKeyboard from '../components/VirtualKeyboard';
 import api from '../services/api';
+import { generateRsaKeyPairPem, storeLocalE2EEKeyPair } from '../utils/e2eeKeyStore';
 
 const COUNTRY_CODES = [
   { code: '+91', label: 'IN +91' },
@@ -75,11 +76,19 @@ export default function RegisterPage() {
     setLoading(true);
 
     try {
+      const generatedKeyPair = await generateRsaKeyPairPem();
       const submitData = {
         ...form,
         phone: form.phone ? `${countryCode}${form.phone.replace(/[\s\-]/g, '')}` : null,
+        public_key: generatedKeyPair.publicKeyPem,
       };
       const data = await register(submitData);
+      await storeLocalE2EEKeyPair(
+        form.email,
+        generatedKeyPair.publicKeyPem,
+        generatedKeyPair.privateKeyPem,
+        form.password
+      );
       setTotpSetup(data);
     } catch (err) {
       const detail = err.response?.data?.detail;
@@ -234,6 +243,7 @@ export default function RegisterPage() {
             >
               <option value="user">Job Seeker</option>
               <option value="recruiter">Recruiter</option>
+              <option value="admin">Admin (Read-only)</option>
             </select>
           </div>
 

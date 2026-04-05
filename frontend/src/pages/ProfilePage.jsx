@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import { User, Save, Plus, Trash2, GraduationCap, Briefcase, Globe, Lock, Users, Upload, Eye, EyeOff } from 'lucide-react';
 import { toISTDate } from '../utils/time';
+import KeyManagement from '../components/KeyManagement';
 
 const PRIVACY_OPTIONS = [
   { value: 'public', label: 'Public', icon: Globe },
@@ -481,6 +482,11 @@ export default function ProfilePage() {
             ))}
           </div>
         )}
+      </div>
+
+      {/* Encryption Keys */}
+      <div className="mb-6">
+        <KeyManagement variant="section" />
       </div>
 
       {/* Profile Viewers */}

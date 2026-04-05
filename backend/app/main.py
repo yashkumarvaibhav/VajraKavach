@@ -9,6 +9,8 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.openapi.docs import get_swagger_ui_html
 
 from app.config import settings
 from app.database import init_db
@@ -56,13 +58,13 @@ async def lifespan(app: FastAPI):
             cert_path=cert_path,
             key_path=key_path,
         )
-        logger.info(f"TLS cert: {cert_path}, key: {key_path}")
+        logger.info("TLS certificates generated.")
 
     # Generate Fernet key if placeholder
-    if settings.FERNET_SECRET_KEY.startswith("placeholder"):
+    if not settings.FERNET_SECRET_KEY or settings.FERNET_SECRET_KEY.startswith("placeholder"):
         from cryptography.fernet import Fernet
         new_key = Fernet.generate_key().decode()
-        logger.warning(f"Generated new Fernet key (persist this!): {new_key}")
+        logger.warning("No Fernet key configured — generated a new one. Set FERNET_SECRET_KEY in .env to persist it.")
         # Update the in-memory setting
         settings.FERNET_SECRET_KEY = new_key
 
@@ -81,9 +83,22 @@ app = FastAPI(
     version=settings.APP_VERSION,
     description="Secure Job Search & Professional Networking Platform",
     lifespan=lifespan,
-    docs_url="/api/docs",
-    redoc_url="/api/redoc",
+    docs_url=None,
+    redoc_url="/api/redoc" if settings.DEBUG else None,
 )
+
+# Mount static files for local Swagger UI assets
+app.mount("/static", StaticFiles(directory=os.path.join(os.path.dirname(__file__), "static")), name="static")
+
+if settings.DEBUG:
+    @app.get("/api/docs", include_in_schema=False)
+    async def custom_swagger_ui():
+        return get_swagger_ui_html(
+            openapi_url="/openapi.json",
+            title=f"{settings.APP_TITLE} - Swagger UI",
+            swagger_js_url="/static/swagger-ui-bundle.js",
+            swagger_css_url="/static/swagger-ui.css",
+        )
 
 # ── Middleware (order matters: last added = first executed) ───────────
 
@@ -92,8 +107,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins_list,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization", "X-Request-ID"],
 )
 
 # Security headers
@@ -127,9 +142,7 @@ app.include_router(reports_router)
 async def root():
     return {
         "app": settings.APP_TITLE,
-        "version": settings.APP_VERSION,
         "status": "running",
-        "docs": "/api/docs",
     }
 
 

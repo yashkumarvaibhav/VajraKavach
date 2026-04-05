@@ -8,7 +8,39 @@ import pyotp
 import qrcode
 import io
 import base64
+import logging
+from cryptography.fernet import Fernet, InvalidToken
 from app.config import settings
+
+logger = logging.getLogger(__name__)
+
+_fernet = None
+
+def _get_fernet():
+    global _fernet
+    if _fernet is None and settings.FERNET_SECRET_KEY:
+        _fernet = Fernet(settings.FERNET_SECRET_KEY.encode() if isinstance(settings.FERNET_SECRET_KEY, str) else settings.FERNET_SECRET_KEY)
+    return _fernet
+
+
+def encrypt_totp_secret(plaintext_secret: str) -> str:
+    """Encrypt a TOTP secret with Fernet. Returns base64 ciphertext."""
+    f = _get_fernet()
+    if f is None:
+        return plaintext_secret
+    return f.encrypt(plaintext_secret.encode()).decode()
+
+
+def decrypt_totp_secret(stored_secret: str) -> str:
+    """Decrypt a Fernet-encrypted TOTP secret. Falls back to plaintext for legacy values."""
+    f = _get_fernet()
+    if f is None:
+        return stored_secret
+    try:
+        return f.decrypt(stored_secret.encode()).decode()
+    except (InvalidToken, Exception):
+        # Legacy plaintext secret — return as-is
+        return stored_secret
 
 
 def generate_totp_secret() -> str:

@@ -113,7 +113,7 @@ export default function LandingPage() {
       {/* Trust */}
       <section className="bg-primary-600 py-16">
         <div className="max-w-4xl mx-auto px-6 text-center text-white">
-          <h2 className="text-3xl font-bold mb-6">Built for CSE 345/545 — Network Security</h2>
+          <h2 className="text-3xl font-bold mb-6">Built for CSE 345/545 — Fundamentals of Computer Security</h2>
           <div className="grid sm:grid-cols-3 gap-8 mt-8">
             {[
               ['Argon2id', 'Password hashing with memory-hard KDF'],

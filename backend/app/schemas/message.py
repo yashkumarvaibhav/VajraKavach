@@ -38,6 +38,7 @@ class ConversationResponse(BaseModel):
     partner_name: Optional[str] = None
     member_count: Optional[int] = None  # For group chats
     created_at: datetime
+    last_message_at: Optional[datetime] = None
 
     class Config:
         from_attributes = True

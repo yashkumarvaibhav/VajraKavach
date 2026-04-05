@@ -49,7 +49,7 @@ async def create_job(
     req: JobCreate,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role("recruiter", "admin")),
+    current_user: User = Depends(require_role("recruiter", "platform_admin")),
 ):
     """Post a new job listing."""
     result = await db.execute(select(Company).where(Company.id == req.company_id))
@@ -57,7 +57,7 @@ async def create_job(
     if not company:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Company not found")
 
-    if str(company.admin_id) != str(current_user.id) and current_user.role.value != "admin":
+    if str(company.admin_id) != str(current_user.id) and current_user.role.value != "platform_admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized for this company")
 
     job = Job(
@@ -93,7 +93,7 @@ async def create_job(
 @router.get("/my", response_model=list[JobResponse])
 async def my_jobs(
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role("recruiter", "admin")),
+    current_user: User = Depends(require_role("recruiter", "platform_admin")),
 ):
     """List jobs posted by the current recruiter (with applicant counts)."""
     # Get companies owned by this recruiter
@@ -207,7 +207,7 @@ async def update_job(
     req: JobUpdate,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role("recruiter", "admin")),
+    current_user: User = Depends(require_role("recruiter", "platform_admin")),
 ):
     """Update a job listing."""
     result = await db.execute(select(Job).where(Job.id == job_id))
@@ -217,7 +217,7 @@ async def update_job(
 
     company_result = await db.execute(select(Company).where(Company.id == job.company_id))
     company = company_result.scalar_one_or_none()
-    if str(company.admin_id) != str(current_user.id) and current_user.role.value != "admin":
+    if str(company.admin_id) != str(current_user.id) and current_user.role.value != "platform_admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
 
     update_data = req.model_dump(exclude_unset=True)
@@ -244,7 +244,7 @@ async def delete_job(
     job_id: str,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role("recruiter", "admin")),
+    current_user: User = Depends(require_role("recruiter", "platform_admin")),
 ):
     """Delete a job listing."""
     result = await db.execute(select(Job).where(Job.id == job_id))
@@ -254,7 +254,7 @@ async def delete_job(
 
     company_result = await db.execute(select(Company).where(Company.id == job.company_id))
     company = company_result.scalar_one_or_none()
-    if str(company.admin_id) != str(current_user.id) and current_user.role.value != "admin":
+    if str(company.admin_id) != str(current_user.id) and current_user.role.value != "platform_admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
 
     await create_audit_log(

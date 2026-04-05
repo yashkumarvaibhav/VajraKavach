@@ -13,11 +13,26 @@ from cryptography import x509
 from cryptography.x509.oid import NameOID
 from datetime import datetime, timedelta
 import base64
+from app.config import settings
+
+
+def _get_key_encryption():
+    """Return encryption algorithm for private key serialization."""
+    passphrase = settings.PKI_KEY_PASSPHRASE
+    if passphrase:
+        return serialization.BestAvailableEncryption(passphrase.encode())
+    return serialization.NoEncryption()
+
+
+def _get_key_password() -> bytes | None:
+    """Return passphrase bytes for loading an encrypted private key."""
+    passphrase = settings.PKI_KEY_PASSPHRASE
+    return passphrase.encode() if passphrase else None
 
 
 # ── Key Pair Generation ─────────────────────────────────────────────
 
-def generate_rsa_key_pair(key_size: int = 2048) -> tuple[str, str]:
+def generate_rsa_key_pair(key_size: int = 4096) -> tuple[str, str]:
     """
     Generate an RSA key pair.
     Returns (private_key_pem, public_key_pem) as strings.
@@ -31,7 +46,7 @@ def generate_rsa_key_pair(key_size: int = 2048) -> tuple[str, str]:
     private_pem = private_key.private_bytes(
         encoding=serialization.Encoding.PEM,
         format=serialization.PrivateFormat.PKCS8,
-        encryption_algorithm=serialization.NoEncryption(),
+        encryption_algorithm=_get_key_encryption(),
     ).decode("utf-8")
 
     public_pem = private_key.public_key().public_bytes(
@@ -51,7 +66,7 @@ def sign_data(data: bytes, private_key_pem: str) -> str:
     """
     private_key = serialization.load_pem_private_key(
         private_key_pem.encode("utf-8"),
-        password=None,
+        password=_get_key_password(),
         backend=default_backend(),
     )
     signature = private_key.sign(
@@ -113,7 +128,7 @@ def decrypt_with_private_key(ciphertext_b64: str, private_key_pem: str) -> bytes
     """
     private_key = serialization.load_pem_private_key(
         private_key_pem.encode("utf-8"),
-        password=None,
+        password=_get_key_password(),
         backend=default_backend(),
     )
     ciphertext = base64.b64decode(ciphertext_b64)
@@ -140,7 +155,7 @@ def generate_self_signed_cert(
 
     key = rsa.generate_private_key(
         public_exponent=65537,
-        key_size=2048,
+        key_size=4096,
         backend=default_backend(),
     )
 
@@ -166,7 +181,7 @@ def generate_self_signed_cert(
         f.write(key.private_bytes(
             serialization.Encoding.PEM,
             serialization.PrivateFormat.TraditionalOpenSSL,
-            serialization.NoEncryption(),
+            _get_key_encryption(),
         ))
 
     with open(cert_path, "wb") as f:

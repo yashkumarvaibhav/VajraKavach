@@ -167,7 +167,7 @@ async def my_applications(
 async def job_applications(
     job_id: str,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role("recruiter", "admin")),
+    current_user: User = Depends(require_role("recruiter", "admin", "platform_admin")),
 ):
     """List all applications for a job (recruiter/admin only, with applicant info)."""
     job_result = await db.execute(select(Job).where(Job.id == job_id))
@@ -177,7 +177,7 @@ async def job_applications(
 
     company_result = await db.execute(select(Company).where(Company.id == job.company_id))
     company = company_result.scalar_one_or_none()
-    if str(company.admin_id) != str(current_user.id) and current_user.role.value != "admin":
+    if str(company.admin_id) != str(current_user.id) and current_user.role.value not in ("admin", "platform_admin"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
 
     result = await db.execute(
@@ -194,9 +194,9 @@ async def update_application_status(
     req: ApplicationStatusUpdate,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role("recruiter", "admin")),
+    current_user: User = Depends(require_role("recruiter", "platform_admin")),
 ):
-    """Update application status (recruiter/admin only)."""
+    """Update application status (recruiter/platform admin only)."""
     result = await db.execute(
         select(Application).where(Application.id == application_id)
     )
@@ -209,7 +209,7 @@ async def update_application_status(
     company_result = await db.execute(select(Company).where(Company.id == job.company_id))
     company = company_result.scalar_one_or_none()
 
-    if str(company.admin_id) != str(current_user.id) and current_user.role.value != "admin":
+    if str(company.admin_id) != str(current_user.id) and current_user.role.value != "platform_admin":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
 
     old_status = application.status.value if hasattr(application.status, 'value') else application.status

@@ -36,15 +36,17 @@ export default function ResumePage() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 5 * 1024 * 1024) {
-      setError('File too large. Max 5MB.');
+    if (file.size > 10 * 1024 * 1024) {
+      setError('File too large. Max 10MB.');
       return;
     }
 
-    const allowed = ['application/pdf', 'application/msword',
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+    const allowed = [
+      'application/pdf',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    ];
     if (!allowed.includes(file.type)) {
-      setError('Only PDF and DOC/DOCX files are allowed.');
+      setError('Only PDF and DOCX files are allowed.');
       return;
     }
 
@@ -127,8 +129,8 @@ export default function ResumePage() {
       <div className="bg-gradient-to-r from-primary-600 to-primary-700 rounded-xl p-4 mb-6 text-white flex items-center gap-3">
         <Shield className="h-6 w-6 flex-shrink-0" />
         <div>
-          <p className="font-medium text-sm">End-to-End Encrypted Storage</p>
-          <p className="text-xs text-primary-200">Your resume is encrypted with AES-256 and requires TOTP verification to download</p>
+          <p className="font-medium text-sm">Encrypted Resume Storage</p>
+          <p className="text-xs text-primary-200">Your resume is encrypted at rest and requires TOTP verification to download</p>
         </div>
       </div>
 
@@ -169,7 +171,7 @@ export default function ResumePage() {
           <div className="mt-6 pt-6 border-t border-gray-100">
             <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer hover:text-primary-600 transition">
               <Upload className="h-4 w-4" /> Replace with new resume
-              <input type="file" className="hidden" onChange={uploadResume} accept=".pdf,.doc,.docx" disabled={uploading} />
+              <input type="file" className="hidden" onChange={uploadResume} accept=".pdf,.docx" disabled={uploading} />
             </label>
           </div>
         </div>
@@ -181,9 +183,9 @@ export default function ResumePage() {
           <label className="inline-flex items-center gap-2 px-6 py-3 bg-primary-600 text-white rounded-lg cursor-pointer hover:bg-primary-700 transition">
             <Upload className="h-5 w-5" />
             {uploading ? 'Uploading...' : 'Upload Resume'}
-            <input type="file" className="hidden" onChange={uploadResume} accept=".pdf,.doc,.docx" disabled={uploading} />
+            <input type="file" className="hidden" onChange={uploadResume} accept=".pdf,.docx" disabled={uploading} />
           </label>
-          <p className="text-xs text-gray-400 mt-3">PDF, DOC, or DOCX • Max 5MB</p>
+          <p className="text-xs text-gray-400 mt-3">PDF or DOCX • Max 10MB</p>
         </div>
       )}
 

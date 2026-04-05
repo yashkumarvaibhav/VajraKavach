@@ -4,7 +4,7 @@ VajraKavach — Auth Schemas
 
 import re
 from pydantic import BaseModel, EmailStr, Field, field_validator
-from typing import Optional
+from typing import Literal, Optional
 
 
 def validate_strong_password(password: str) -> str:
@@ -29,7 +29,8 @@ class RegisterRequest(BaseModel):
     password: str = Field(..., min_length=8, max_length=16)
     full_name: str = Field(..., min_length=1, max_length=255)
     phone: Optional[str] = None
-    role: Optional[str] = "user"  # user, recruiter
+    role: Literal["user", "recruiter", "admin"] = "user"
+    public_key: str = Field(..., min_length=64)
 
     @field_validator("password")
     @classmethod
@@ -57,8 +58,8 @@ class TOTPVerifyRequest(BaseModel):
 
 
 class TokenResponse(BaseModel):
-    access_token: str
-    refresh_token: str
+    access_token: Optional[str] = None
+    refresh_token: Optional[str] = None
     token_type: str = "bearer"
     totp_required: bool = False
     totp_setup_required: bool = False
@@ -73,7 +74,7 @@ class TOTPSetupResponse(BaseModel):
 
 
 class RefreshTokenRequest(BaseModel):
-    refresh_token: str
+    refresh_token: Optional[str] = None
 
 
 class PasswordChangeRequest(BaseModel):
@@ -103,3 +104,8 @@ class ForgotPasswordRequest(BaseModel):
     @classmethod
     def check_password_strength(cls, v):
         return validate_strong_password(v)
+
+
+class DeleteAccountRequest(BaseModel):
+    confirmation_text: str = Field(..., min_length=1, max_length=64)
+    totp_token: str = Field(..., min_length=6, max_length=6)

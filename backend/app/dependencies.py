@@ -12,16 +12,31 @@ from app.models.user import User
 from app.services.auth_service import decode_token
 from app.utils.ip import get_client_ip
 
-security = HTTPBearer()
+security = HTTPBearer(auto_error=False)
+
+
+def _extract_bearer_token(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None,
+) -> str | None:
+    """Support both Authorization headers and secure auth cookies."""
+    if credentials and credentials.scheme.lower() == "bearer":
+        return credentials.credentials
+    return request.cookies.get("access_token")
 
 
 async def get_current_user(
     request: Request,
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
     db: AsyncSession = Depends(get_db),
 ) -> User:
     """Extract user from Bearer JWT token."""
-    token = credentials.credentials
+    token = _extract_bearer_token(request, credentials)
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required",
+        )
     payload = decode_token(token)
 
     if payload is None:
@@ -65,12 +80,15 @@ async def get_current_user(
 
 
 async def get_current_user_pre_totp(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None = Depends(security),
     db: AsyncSession = Depends(get_db),
 ) -> User:
     """Extract user from Bearer JWT — does NOT require TOTP verification yet.
     Used for the /verify-totp endpoint itself."""
-    token = credentials.credentials
+    token = _extract_bearer_token(request, credentials)
+    if not token:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required")
     payload = decode_token(token)
 
     if payload is None:
@@ -79,6 +97,15 @@ async def get_current_user_pre_totp(
     user_id = payload.get("sub")
     if not user_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token payload")
+
+    token_ip = payload.get("ip")
+    if token_ip:
+        request_ip = get_client_ip(request)
+        if request_ip != token_ip:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Session IP mismatch. Please log in again.",
+            )
 
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()

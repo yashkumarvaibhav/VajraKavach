@@ -18,7 +18,7 @@ export default function DashboardPage() {
         };
         const s = {};
 
-        if (user?.role !== 'admin') {
+        if (user?.role !== 'admin' && user?.role !== 'platform_admin') {
           const [connRes, convRes, profileRes] = await Promise.all([
             api.get('/users/connections'),
             api.get(endpoints.conversations),
@@ -90,7 +90,7 @@ export default function DashboardPage() {
     { icon: Shield, label: 'Security', desc: 'Change password & TOTP', to: '/security', color: 'red' },
   ];
 
-  const cards = user?.role === 'admin' ? adminCards : user?.role === 'recruiter' ? recruiterCards : userCards;
+  const cards = (user?.role === 'admin' || user?.role === 'platform_admin') ? adminCards : user?.role === 'recruiter' ? recruiterCards : userCards;
 
   const colorClasses = {
     blue: 'bg-blue-50 text-blue-600',
@@ -106,7 +106,7 @@ export default function DashboardPage() {
       <div className="bg-gradient-to-r from-primary-600 to-primary-700 rounded-2xl p-8 mb-8 text-white">
         <h1 className="text-3xl font-bold mb-2">Welcome back, {user?.full_name}!</h1>
         <p className="text-primary-100">
-          {user?.role === 'admin' ? 'Platform Administrator' : user?.role === 'recruiter' ? 'Recruiter Dashboard' : 'Your secure professional hub'}
+          {user?.role === 'platform_admin' ? 'Platform Administrator' : user?.role === 'admin' ? 'Admin Dashboard' : user?.role === 'recruiter' ? 'Recruiter Dashboard' : 'Your secure professional hub'}
         </p>
       </div>
 

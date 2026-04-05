@@ -7,6 +7,7 @@ import { toISTDate, toISTDateTime } from '../utils/time';
 
 export default function AdminDashboard() {
   const { user } = useAuth();
+  const isPlatformAdmin = user?.role === 'platform_admin';
   const [tab, setTab] = useState('overview');
   const [dashboard, setDashboard] = useState(null);
   const [users, setUsers] = useState([]);
@@ -18,7 +19,7 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [auditPage, setAuditPage] = useState(0);
+  const [auditPage, setAuditPage] = useState(1);
   const [announcements, setAnnouncements] = useState([]);
   const [announcementTitle, setAnnouncementTitle] = useState('');
   const [announcementContent, setAnnouncementContent] = useState('');
@@ -64,11 +65,11 @@ export default function AdminDashboard() {
     }
   }, []);
 
-  const fetchAuditLogs = async (skip = 0) => {
+  const fetchAuditLogs = async (page = 1) => {
     try {
-      const res = await api.get(`/admin/audit-logs?skip=${skip}&limit=20`);
+      const res = await api.get(`/admin/audit-logs?page=${page}&page_size=20`);
       setAuditLogs(res.data || []);
-      setAuditPage(skip);
+      setAuditPage(page);
     } catch (err) {
       console.error('Audit error:', err);
     }
@@ -292,7 +293,7 @@ export default function AdminDashboard() {
     <div className="max-w-6xl mx-auto px-4 py-8">
       <div className="flex items-center space-x-3 mb-6">
         <Shield className="h-8 w-8 text-primary-600" />
-        <h1 className="text-3xl font-bold text-gray-900">Admin Dashboard</h1>
+        <h1 className="text-3xl font-bold text-gray-900">Admin Dashboard{!isPlatformAdmin && ' (View Only)'}</h1>
       </div>
 
       {/* Tabs */}
@@ -368,11 +369,12 @@ export default function AdminDashboard() {
                       </td>
                       <td className="px-4 py-3">
                         <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${
+                          u.role === 'platform_admin' ? 'bg-red-50 text-red-700' :
                           u.role === 'admin' ? 'bg-purple-50 text-purple-700' :
                           u.role === 'recruiter' ? 'bg-blue-50 text-blue-700' :
                           'bg-gray-100 text-gray-700'
                         }`}>
-                          {u.role}
+                          {u.role === 'platform_admin' ? 'Platform Admin' : u.role}
                         </span>
                       </td>
                       <td className="px-4 py-3">
@@ -392,7 +394,7 @@ export default function AdminDashboard() {
                         </span>
                       </td>
                       <td className="px-4 py-3 text-right space-x-2">
-                        {u.role !== 'admin' && (
+                        {isPlatformAdmin && u.role !== 'platform_admin' && (
                           <>
                             <button
                               onClick={() => toggleSuspend(u.id, u.is_suspended)}
@@ -457,17 +459,19 @@ export default function AdminDashboard() {
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-500">{toISTDate(job.created_at)}</td>
                     <td className="px-4 py-3 text-right">
-                      <button
-                        onClick={() => toggleJobActive(job.id)}
-                        disabled={actionLoading === job.id}
-                        className={`px-3 py-1.5 text-xs font-medium rounded-lg transition ${
-                          job.is_active
-                            ? 'bg-red-100 text-red-700 hover:bg-red-200'
-                            : 'bg-green-600 text-white hover:bg-green-700'
-                        } disabled:opacity-50`}
-                      >
-                        {actionLoading === job.id ? '...' : job.is_active ? 'Delist' : 'Re-activate'}
-                      </button>
+                      {isPlatformAdmin && (
+                        <button
+                          onClick={() => toggleJobActive(job.id)}
+                          disabled={actionLoading === job.id}
+                          className={`px-3 py-1.5 text-xs font-medium rounded-lg transition ${
+                            job.is_active
+                              ? 'bg-red-100 text-red-700 hover:bg-red-200'
+                              : 'bg-green-600 text-white hover:bg-green-700'
+                          } disabled:opacity-50`}
+                        >
+                          {actionLoading === job.id ? '...' : job.is_active ? 'Delist' : 'Re-activate'}
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -532,37 +536,39 @@ export default function AdminDashboard() {
       {/* Announcements */}
       {tab === 'announcements' && (
         <div className="space-y-6">
-          {/* Create Announcement */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-              <Megaphone className="h-5 w-5 text-primary-600" />
-              New Announcement
-            </h3>
-            <p className="text-xs text-gray-500 mb-3">
-              Announcements are server-side encrypted (AES/Fernet) at rest and broadcast to all users.
-            </p>
-            <div className="space-y-3">
-              <input
-                type="text" value={announcementTitle}
-                onChange={(e) => setAnnouncementTitle(e.target.value)}
-                placeholder="Announcement title..."
-                maxLength={200}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 outline-none"
-              />
-              <textarea
-                value={announcementContent}
-                onChange={(e) => setAnnouncementContent(e.target.value)}
-                placeholder="Announcement content..."
-                maxLength={10000}
-                rows={4}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 outline-none resize-none"
-              />
-              <button onClick={sendAnnouncement} disabled={sendingAnnouncement || !announcementTitle.trim() || !announcementContent.trim()}
-                className="px-5 py-2 bg-primary-600 text-white text-sm rounded-lg hover:bg-primary-700 transition disabled:opacity-50 font-medium">
-                {sendingAnnouncement ? 'Sending...' : 'Broadcast Announcement'}
-              </button>
+          {/* Create Announcement — platform admin only */}
+          {isPlatformAdmin && (
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
+                <Megaphone className="h-5 w-5 text-primary-600" />
+                New Announcement
+              </h3>
+              <p className="text-xs text-gray-500 mb-3">
+                Announcements are server-side encrypted (AES/Fernet) at rest and broadcast to all users.
+              </p>
+              <div className="space-y-3">
+                <input
+                  type="text" value={announcementTitle}
+                  onChange={(e) => setAnnouncementTitle(e.target.value)}
+                  placeholder="Announcement title..."
+                  maxLength={200}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 outline-none"
+                />
+                <textarea
+                  value={announcementContent}
+                  onChange={(e) => setAnnouncementContent(e.target.value)}
+                  placeholder="Announcement content..."
+                  maxLength={10000}
+                  rows={4}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 outline-none resize-none"
+                />
+                <button onClick={sendAnnouncement} disabled={sendingAnnouncement || !announcementTitle.trim() || !announcementContent.trim()}
+                  className="px-5 py-2 bg-primary-600 text-white text-sm rounded-lg hover:bg-primary-700 transition disabled:opacity-50 font-medium">
+                  {sendingAnnouncement ? 'Sending...' : 'Broadcast Announcement'}
+                </button>
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Existing Announcements */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
@@ -583,10 +589,12 @@ export default function AdminDashboard() {
                           <span className="px-2 py-0.5 bg-green-50 text-green-600 rounded-full text-xs">Server-side encrypted</span>
                         </div>
                       </div>
-                      <button onClick={() => deleteAnnouncement(a.id)}
-                        className="p-2 hover:bg-red-50 rounded-lg text-red-400 hover:text-red-600 transition ml-2" title="Deactivate">
-                        <Trash2 className="h-4 w-4" />
-                      </button>
+                      {isPlatformAdmin && (
+                        <button onClick={() => deleteAnnouncement(a.id)}
+                          className="p-2 hover:bg-red-50 rounded-lg text-red-400 hover:text-red-600 transition ml-2" title="Deactivate">
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -649,7 +657,7 @@ export default function AdminDashboard() {
                       </span>
                     </td>
                     <td className="px-4 py-3 text-right">
-                      {r.status === 'pending' && (
+                      {isPlatformAdmin && r.status === 'pending' && (
                         <div className="flex gap-1 justify-end">
                           <button onClick={() => updateReportStatus(r.id, 'reviewed')}
                             className="px-2 py-1 text-xs bg-blue-50 text-blue-700 rounded hover:bg-blue-100">Review</button>
@@ -659,7 +667,7 @@ export default function AdminDashboard() {
                             className="px-2 py-1 text-xs bg-gray-100 text-gray-600 rounded hover:bg-gray-200">Dismiss</button>
                         </div>
                       )}
-                      {r.status === 'reviewed' && (
+                      {isPlatformAdmin && r.status === 'reviewed' && (
                         <div className="flex gap-1 justify-end">
                           <button onClick={() => updateReportStatus(r.id, 'resolved')}
                             className="px-2 py-1 text-xs bg-green-50 text-green-700 rounded hover:bg-green-100">Resolve</button>
@@ -714,12 +722,14 @@ export default function AdminDashboard() {
             </table>
           </div>
           <div className="flex justify-between items-center mt-4">
-            <button onClick={() => fetchAuditLogs(Math.max(0, auditPage - 20))} disabled={auditPage === 0}
+            <button onClick={() => fetchAuditLogs(Math.max(1, auditPage - 1))} disabled={auditPage === 1}
               className="flex items-center gap-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50">
               <ChevronLeft className="h-4 w-4" /> Previous
             </button>
-            <span className="text-sm text-gray-500">Showing {auditPage + 1} - {auditPage + auditLogs.length}</span>
-            <button onClick={() => fetchAuditLogs(auditPage + 20)} disabled={auditLogs.length < 20}
+            <span className="text-sm text-gray-500">
+              Showing {(auditPage - 1) * 20 + 1} - {(auditPage - 1) * 20 + auditLogs.length}
+            </span>
+            <button onClick={() => fetchAuditLogs(auditPage + 1)} disabled={auditLogs.length < 20}
               className="flex items-center gap-1 px-3 py-1.5 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50">
               Next <ChevronRight className="h-4 w-4" />
             </button>
@@ -737,10 +747,12 @@ export default function AdminDashboard() {
                     Chain: {blockchainStatus.valid ? 'Valid' : 'Tampered'} ({blockchainStatus.total_blocks} blocks)
                   </span>
                 )}
-                <button onClick={mineBlock} disabled={mining}
-                  className="px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition disabled:opacity-50">
-                  {mining ? 'Mining...' : 'Mine New Block'}
-                </button>
+                {isPlatformAdmin && (
+                  <button onClick={mineBlock} disabled={mining}
+                    className="px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition disabled:opacity-50">
+                    {mining ? 'Mining...' : 'Mine New Block'}
+                  </button>
+                )}
               </div>
             </div>
             {blocks.length > 0 ? (

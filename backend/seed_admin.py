@@ -1,5 +1,5 @@
 """
-VajraKavach — Seed Admin User
+VajraKavach — Seed Platform Admin User
 Creates the platform admin account: vajrakavach@iiitd.ac.in
 Run: cd backend && source venv/bin/activate && python seed_admin.py
 """
@@ -16,7 +16,6 @@ from app.database import async_session, init_db
 from app.models.user import User, UserProfile, UserRole
 from app.services.auth_service import hash_password
 from app.services.totp_service import generate_totp_secret, get_totp_uri, generate_qr_code_base64
-from app.services.pki_service import generate_rsa_key_pair
 
 # ─── Seed Admin Credentials ──────────────────────────────────────────
 ADMIN_EMAIL = ""
@@ -45,19 +44,17 @@ async def seed():
         # Generate TOTP secret (admin must scan QR on first login)
         totp_secret = generate_totp_secret()
 
-        # Generate RSA key pair
-        private_key_pem, public_key_pem = generate_rsa_key_pair()
-
         admin_id = uuid.uuid4()
         admin = User(
             id=admin_id,
             email=ADMIN_EMAIL,
             hashed_password=hashed_pw,
             full_name=ADMIN_NAME,
-            role=UserRole.ADMIN,
+            role=UserRole.PLATFORM_ADMIN,
             totp_secret=totp_secret,
             totp_verified=False,   # Must verify TOTP on first login
-            public_key=public_key_pem,
+            public_key=None,
+            encrypted_private_key=None,
             is_active=True,
             is_suspended=False,
         )
@@ -80,7 +77,7 @@ async def seed():
         print("=" * 60)
         print(f"  Email    : {ADMIN_EMAIL}")
         print(f"  Password : {ADMIN_PASSWORD}")
-        print(f"  Role     : admin")
+        print(f"  Role     : platform_admin")
         print(f"  ID       : {admin_id}")
         print(f"  TOTP Sec : {totp_secret}")
         print(f"  TOTP URI : {totp_uri}")

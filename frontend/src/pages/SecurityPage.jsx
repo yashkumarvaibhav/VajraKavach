@@ -1,8 +1,10 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
 import VirtualKeyboard from '../components/VirtualKeyboard';
 import { Shield, Lock, CheckCircle, AlertCircle, Eye, EyeOff } from 'lucide-react';
+import { deleteLocalE2EEKeyPair } from '../utils/e2eeKeyStore';
 
 function PasswordStrength({ password }) {
   const checks = [
@@ -34,14 +36,18 @@ function PasswordStrength({ password }) {
 }
 
 export default function SecurityPage() {
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [totpToken, setTotpToken] = useState('');
+  const [deleteTotpToken, setDeleteTotpToken] = useState('');
+  const [deleteConfirmation, setDeleteConfirmation] = useState('');
   const [showCurrent, setShowCurrent] = useState(false);
   const [showNew, setShowNew] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
 
@@ -81,6 +87,31 @@ export default function SecurityPage() {
       }
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    setError('');
+    setMessage('');
+    setDeleting(true);
+
+    try {
+      await api.post('/auth/delete-account', {
+        confirmation_text: deleteConfirmation,
+        totp_token: deleteTotpToken,
+      });
+      await deleteLocalE2EEKeyPair(user?.email);
+      await logout({ skipRequest: true });
+      navigate('/', { replace: true });
+    } catch (err) {
+      const detail = err.response?.data?.detail;
+      if (Array.isArray(detail)) {
+        setError(detail.map(d => d.msg || d).join('; '));
+      } else {
+        setError(detail || 'Failed to delete account');
+      }
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -200,6 +231,46 @@ export default function SecurityPage() {
           <div><span className="text-gray-500">Role:</span> <span className="font-medium uppercase">{user?.role}</span></div>
           <div><span className="text-gray-500">TOTP:</span> <span className="font-medium text-green-600">Verified</span></div>
           <div><span className="text-gray-500">Status:</span> <span className="font-medium text-green-600">Active</span></div>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-xl shadow-sm border border-red-200 p-6 mt-6">
+        <h3 className="text-lg font-semibold text-red-700 mb-2">Danger Zone</h3>
+        <p className="text-sm text-gray-600 mb-4">
+          Deleting your account is permanent. Your profile, connections, messages, resumes,
+          applications, and any recruiter-managed content tied to this account will be removed.
+        </p>
+
+        <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700 mb-4">
+          Type <span className="font-semibold">DELETE MY ACCOUNT</span> and enter your TOTP code to continue.
+        </div>
+
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Confirmation Phrase</label>
+            <input
+              type="text"
+              value={deleteConfirmation}
+              onChange={(e) => setDeleteConfirmation(e.target.value)}
+              maxLength={64}
+              className={inputClass}
+              placeholder="DELETE MY ACCOUNT"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">TOTP Verification (required for account deletion)</label>
+            <VirtualKeyboard value={deleteTotpToken} onChange={setDeleteTotpToken} maxLength={6} />
+          </div>
+
+          <button
+            type="button"
+            onClick={handleDeleteAccount}
+            disabled={deleting || deleteTotpToken.length !== 6 || deleteConfirmation.trim().toUpperCase() !== 'DELETE MY ACCOUNT'}
+            className="w-full bg-red-600 text-white py-2.5 rounded-lg font-medium hover:bg-red-700 transition disabled:opacity-50"
+          >
+            {deleting ? 'Deleting Account...' : 'Delete My Account Permanently'}
+          </button>
         </div>
       </div>
     </div>

@@ -18,6 +18,7 @@ from app.schemas.job import JobCreate, JobUpdate, JobResponse
 from app.dependencies import get_current_user, require_role
 from app.services.audit_service import create_audit_log
 from app.utils.ip import get_client_ip
+from app.utils.sanitize import escape_like
 
 router = APIRouter(prefix="/api/jobs", tags=["Jobs"])
 
@@ -147,18 +148,19 @@ async def search_jobs(
     query = select(Job, Company.name.label("company_name")).join(Company, Job.company_id == Company.id).where(Job.is_active == True)
 
     if keyword:
+        ek = escape_like(keyword)
         query = query.where(
             or_(
-                Job.title.ilike(f"%{keyword}%"),
-                Job.description.ilike(f"%{keyword}%"),
+                Job.title.ilike(f"%{ek}%"),
+                Job.description.ilike(f"%{ek}%"),
             )
         )
 
     if company:
-        query = query.where(Company.name.ilike(f"%{company}%"))
+        query = query.where(Company.name.ilike(f"%{escape_like(company)}%"))
 
     if location:
-        query = query.where(Job.location.ilike(f"%{location}%"))
+        query = query.where(Job.location.ilike(f"%{escape_like(location)}%"))
 
     if location_type:
         query = query.where(Job.location_type == location_type)

@@ -18,7 +18,7 @@ from app.dependencies import require_role
 from app.services.audit_service import create_audit_log, verify_audit_chain
 from app.utils.ip import get_client_ip
 from app.services.auth_service import hash_password
-from app.services.totp_service import generate_totp_secret, get_totp_uri, generate_qr_code_base64
+from app.services.totp_service import generate_totp_secret, get_totp_uri, generate_qr_code_base64, encrypt_totp_secret
 
 router = APIRouter(prefix="/api/admin", tags=["Admin"])
 
@@ -204,7 +204,7 @@ async def create_admin(
         hashed_password=hashed_pw,
         full_name=req.full_name,
         role=UserRole.PLATFORM_ADMIN,
-        totp_secret=totp_secret,
+        totp_secret=encrypt_totp_secret(totp_secret),
         totp_verified=False,
         public_key=None,
         encrypted_private_key=None,

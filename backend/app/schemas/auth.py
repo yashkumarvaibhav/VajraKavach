@@ -11,8 +11,8 @@ def validate_strong_password(password: str) -> str:
     """Enforce strong password: 8-16 chars, upper+lower+digit+special."""
     if len(password) < 8:
         raise ValueError("Password must be at least 8 characters")
-    if len(password) > 16:
-        raise ValueError("Password must be at most 16 characters")
+    if len(password) > 72:
+        raise ValueError("Password must be at most 72 characters")
     if not re.search(r"[A-Z]", password):
         raise ValueError("Password must contain at least one uppercase letter")
     if not re.search(r"[a-z]", password):
@@ -26,10 +26,10 @@ def validate_strong_password(password: str) -> str:
 
 class RegisterRequest(BaseModel):
     email: EmailStr
-    password: str = Field(..., min_length=8, max_length=16)
+    password: str = Field(..., min_length=8, max_length=72)
     full_name: str = Field(..., min_length=1, max_length=255)
     phone: Optional[str] = None
-    role: Literal["user", "recruiter"] = "user"
+    role: Literal["user", "recruiter", "admin"] = "user"
     public_key: str = Field(..., min_length=64)
 
     @field_validator("password")

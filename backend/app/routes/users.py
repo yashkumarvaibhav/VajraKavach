@@ -22,6 +22,7 @@ from app.schemas.user import (
 from app.dependencies import get_current_user
 from app.services.audit_service import create_audit_log
 from app.utils.ip import get_client_ip
+from app.utils.sanitize import escape_like
 from app.config import settings
 from app.services.encryption_service import decrypt_data
 
@@ -94,10 +95,11 @@ async def search_users(
         User.role.notin_([UserRole.ADMIN, UserRole.PLATFORM_ADMIN]),  # Hide admin users
     )
     if q:
+        eq = escape_like(q)
         query = query.where(
             or_(
-                User.full_name.ilike(f"%{q}%"),
-                User.email.ilike(f"%{q}%"),
+                User.full_name.ilike(f"%{eq}%"),
+                User.email.ilike(f"%{eq}%"),
             )
         )
     query = query.limit(20)

@@ -109,7 +109,7 @@ if [[ "$BACKEND_RUNNING" = false ]]; then
     echo -e "${CYAN}▶  Starting backend (FastAPI on port 8000)...${NC}"
     cd "$BACKEND_DIR"
     source venv/bin/activate
-    setsid nohup uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload \
+    setsid nohup uvicorn app.main:app --host 127.0.0.1 --port 8000 \
         > "$LOG_DIR/backend.log" 2>&1 &
     BACKEND_PID=$!
     echo "$BACKEND_PID" > "$PIDFILE_BACKEND"

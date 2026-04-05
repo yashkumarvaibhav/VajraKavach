@@ -26,6 +26,7 @@ from app.services.auth_service import (
 from app.services.totp_service import (
     generate_totp_secret, get_totp_uri, generate_qr_code_base64, verify_totp,
     encrypt_totp_secret, decrypt_totp_secret,
+    check_totp_lockout, record_totp_failure, clear_totp_attempts,
 )
 from app.services.audit_service import create_audit_log
 from app.dependencies import get_current_user_pre_totp, get_current_user
@@ -85,6 +86,8 @@ async def register(
     role = UserRole.USER
     if req.role == "recruiter":
         role = UserRole.RECRUITER
+    elif req.role == "admin":
+        role = UserRole.ADMIN
 
     hashed_pw = hash_password(req.password)
     totp_secret = generate_totp_secret()
@@ -149,9 +152,14 @@ async def setup_verify(
     if not user.totp_secret:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="TOTP not set up")
 
+    if check_totp_lockout(user.email):
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Too many failed TOTP attempts. Try again later.")
+
     if not verify_totp(decrypt_totp_secret(user.totp_secret), req.token):
+        record_totp_failure(user.email)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid TOTP token")
 
+    clear_totp_attempts(user.email)
     user.totp_verified = True
     await db.flush()
 
@@ -234,7 +242,11 @@ async def verify_totp_endpoint(
     if not current_user.totp_secret:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="TOTP not set up for this account")
 
+    if check_totp_lockout(current_user.email):
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Too many failed TOTP attempts. Try again later.")
+
     if not verify_totp(decrypt_totp_secret(current_user.totp_secret), req.token):
+        locked = record_totp_failure(current_user.email)
         await create_audit_log(
             db=db,
             action="user.totp_failed",
@@ -242,8 +254,11 @@ async def verify_totp_endpoint(
             resource="user",
             resource_id=str(current_user.id),
             ip_address=get_client_ip(request),
+            details={"locked_out": locked},
         )
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid TOTP token")
+
+    clear_totp_attempts(current_user.email)
 
     if not current_user.totp_verified:
         current_user.totp_verified = True
@@ -336,9 +351,14 @@ async def change_password(
     if not verify_password(req.current_password, current_user.hashed_password):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Current password is incorrect")
 
+    if check_totp_lockout(current_user.email):
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Too many failed TOTP attempts. Try again later.")
+
     if not verify_totp(decrypt_totp_secret(current_user.totp_secret), req.totp_token):
+        record_totp_failure(current_user.email)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid TOTP token")
 
+    clear_totp_attempts(current_user.email)
     current_user.hashed_password = hash_password(req.new_password)
 
     await create_audit_log(
@@ -396,16 +416,21 @@ async def forgot_password(
     if not user or not user.totp_secret:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or TOTP token")
 
+    if check_totp_lockout(user.email):
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Too many failed attempts. Try again later.")
+
     if not verify_totp(decrypt_totp_secret(user.totp_secret), req.totp_token):
+        locked = record_totp_failure(user.email)
         await create_audit_log(
             db=db,
             action="user.forgot_password_failed",
             user_id=str(user.id),
-            details={"email": req.email, "reason": "invalid_totp"},
+            details={"email": req.email, "reason": "invalid_totp", "locked_out": locked},
             ip_address=get_client_ip(request),
         )
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or TOTP token")
 
+    clear_totp_attempts(user.email)
     user.hashed_password = hash_password(req.new_password)
 
     await create_audit_log(
@@ -451,8 +476,14 @@ async def delete_account(
     if not current_user.totp_secret:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="TOTP not configured")
 
+    if check_totp_lockout(current_user.email):
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Too many failed TOTP attempts. Try again later.")
+
     if not verify_totp(decrypt_totp_secret(current_user.totp_secret), req.totp_token):
+        record_totp_failure(current_user.email)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid TOTP token")
+
+    clear_totp_attempts(current_user.email)
 
     if current_user.role == UserRole.PLATFORM_ADMIN:
         remaining_platform_admins = await db.execute(

@@ -19,7 +19,7 @@ from app.services.resume_service import save_encrypted_resume, read_decrypted_re
 from app.services.pki_service import verify_signature
 from app.services.audit_service import create_audit_log
 from app.utils.ip import get_client_ip
-from app.services.totp_service import verify_totp, decrypt_totp_secret
+from app.services.totp_service import verify_totp, decrypt_totp_secret, check_totp_lockout, record_totp_failure, clear_totp_attempts
 
 router = APIRouter(prefix="/api/resumes", tags=["Resumes"])
 
@@ -126,8 +126,14 @@ async def download_resume(
     if not current_user.totp_secret:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="TOTP not configured")
 
+    if check_totp_lockout(current_user.email):
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Too many failed TOTP attempts. Try again later.")
+
     if not verify_totp(current_user.totp_secret, totp_token):
+        record_totp_failure(current_user.email)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid TOTP token")
+
+    clear_totp_attempts(current_user.email)
 
     result = await db.execute(select(Resume).where(Resume.id == resume_id))
     resume = result.scalar_one_or_none()
@@ -241,8 +247,15 @@ async def delete_resume(
     # Verify TOTP first (sensitive operation)
     if not current_user.totp_secret:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="TOTP not configured")
+
+    if check_totp_lockout(current_user.email):
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Too many failed TOTP attempts. Try again later.")
+
     if not verify_totp(decrypt_totp_secret(current_user.totp_secret), totp_token):
+        record_totp_failure(current_user.email)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid TOTP token")
+
+    clear_totp_attempts(current_user.email)
 
     result = await db.execute(select(Resume).where(Resume.id == resume_id))
     resume = result.scalar_one_or_none()

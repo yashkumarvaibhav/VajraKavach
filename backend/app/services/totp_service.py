@@ -9,12 +9,65 @@ import qrcode
 import io
 import base64
 import logging
+import time
 from cryptography.fernet import Fernet, InvalidToken
 from app.config import settings
 
 logger = logging.getLogger(__name__)
 
 _fernet = None
+
+# ── Per-account TOTP attempt tracking (brute-force protection) ──────
+# Key: user identifier (email or user_id), Value: (attempts, first_attempt_time, locked_until)
+_totp_attempts: dict[str, tuple[int, float, float]] = {}
+TOTP_MAX_ATTEMPTS = 5       # Max failed TOTP attempts before lockout
+TOTP_WINDOW_SECONDS = 300   # 5-minute sliding window for attempt counting
+TOTP_LOCKOUT_SECONDS = 900  # 15-minute lockout after max attempts
+
+
+def check_totp_lockout(identifier: str) -> bool:
+    """Check if an account is locked out from TOTP attempts. Returns True if locked."""
+    entry = _totp_attempts.get(identifier)
+    if not entry:
+        return False
+    attempts, first_time, locked_until = entry
+    now = time.time()
+    if locked_until and now < locked_until:
+        return True
+    # Window expired — reset
+    if now - first_time > TOTP_WINDOW_SECONDS:
+        _totp_attempts.pop(identifier, None)
+        return False
+    return False
+
+
+def record_totp_failure(identifier: str) -> bool:
+    """Record a failed TOTP attempt. Returns True if account is now locked out."""
+    now = time.time()
+    entry = _totp_attempts.get(identifier)
+    if entry:
+        attempts, first_time, locked_until = entry
+        # If still locked, extend lockout
+        if locked_until and now < locked_until:
+            return True
+        # Window expired — start fresh
+        if now - first_time > TOTP_WINDOW_SECONDS:
+            _totp_attempts[identifier] = (1, now, 0)
+            return False
+        attempts += 1
+        if attempts >= TOTP_MAX_ATTEMPTS:
+            _totp_attempts[identifier] = (attempts, first_time, now + TOTP_LOCKOUT_SECONDS)
+            return True
+        _totp_attempts[identifier] = (attempts, first_time, 0)
+        return False
+    else:
+        _totp_attempts[identifier] = (1, now, 0)
+        return False
+
+
+def clear_totp_attempts(identifier: str):
+    """Clear attempt counter on successful TOTP verification."""
+    _totp_attempts.pop(identifier, None)
 
 def _get_fernet():
     global _fernet

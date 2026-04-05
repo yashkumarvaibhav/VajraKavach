@@ -45,11 +45,18 @@ async def get_current_user(
             detail="Invalid or expired token",
         )
 
+    # Reject refresh tokens used as access tokens
+    if payload.get("type") != "access":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token type",
+        )
+
     user_id = payload.get("sub")
     if not user_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token payload")
 
-    # IP binding: verify request originates from the same IP that created the session
+    # IP binding
     token_ip = payload.get("ip")
     if token_ip:
         request_ip = get_client_ip(request)
@@ -94,6 +101,10 @@ async def get_current_user_pre_totp(
     if payload is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
 
+    # Reject refresh tokens used as access tokens
+    if payload.get("type") != "access":
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token type")
+
     user_id = payload.get("sub")
     if not user_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token payload")
@@ -112,6 +123,9 @@ async def get_current_user_pre_totp(
 
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    if not user.is_active or user.is_suspended:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account is suspended or deactivated")
 
     return user
 

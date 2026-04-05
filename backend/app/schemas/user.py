@@ -37,7 +37,6 @@ class UserProfileUpdate(BaseModel):
     education: Optional[List[Dict[str, Any]]] = None
     experience: Optional[List[Dict[str, Any]]] = None
     skills: Optional[List[str]] = None
-    profile_picture_url: Optional[str] = None
     privacy_settings: Optional[Dict[str, str]] = None
     show_viewers: Optional[bool] = None
 

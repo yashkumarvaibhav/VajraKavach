@@ -31,7 +31,7 @@ class User(Base):
     role = Column(SAEnum(UserRole), default=UserRole.USER, nullable=False)
 
     # TOTP
-    totp_secret = Column(String(64), nullable=True)
+    totp_secret = Column(String(256), nullable=True)
     totp_verified = Column(Boolean, default=False)
 
     # PKI — user's public key for E2E encryption / message signing

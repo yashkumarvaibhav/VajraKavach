@@ -29,7 +29,7 @@ class RegisterRequest(BaseModel):
     password: str = Field(..., min_length=8, max_length=16)
     full_name: str = Field(..., min_length=1, max_length=255)
     phone: Optional[str] = None
-    role: Literal["user", "recruiter", "admin"] = "user"
+    role: Literal["user", "recruiter"] = "user"
     public_key: str = Field(..., min_length=64)
 
     @field_validator("password")

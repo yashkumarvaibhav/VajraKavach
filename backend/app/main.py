@@ -85,6 +85,7 @@ app = FastAPI(
     lifespan=lifespan,
     docs_url=None,
     redoc_url="/api/redoc" if settings.DEBUG else None,
+    openapi_url="/openapi.json" if settings.DEBUG else None,
 )
 
 # Mount static files for local Swagger UI assets

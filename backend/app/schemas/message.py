@@ -46,7 +46,7 @@ class ConversationResponse(BaseModel):
 
 class GroupCreate(BaseModel):
     name: str = Field(..., max_length=100, min_length=1)
-    member_ids: list[str] = Field(..., min_length=1)
+    member_ids: list[str] = Field(..., min_length=1, max_length=50)
 
 
 class GroupMemberResponse(BaseModel):

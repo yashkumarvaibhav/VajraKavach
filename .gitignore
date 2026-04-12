@@ -38,6 +38,9 @@ Thumbs.db
 .frontend.pid
 logs/
 
+# Tests (local only; backend tests contain environment-specific credentials)
+backend/tests/
+
 # Personal notes & non-source docs
 currentproblems.txt
 resume_YashKumarVaibhav.pdf

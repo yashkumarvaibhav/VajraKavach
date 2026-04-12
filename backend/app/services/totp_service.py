@@ -1,7 +1,7 @@
 """
 VajraKavach — TOTP Service
 Generates TOTP secrets and QR codes, verifies TOTP tokens.
-Uses pyotp (RFC 6238).
+Uses pyotp (RFC 6238). Per-account lockout is DB-backed (survives restarts).
 """
 
 import pyotp
@@ -18,56 +18,116 @@ logger = logging.getLogger(__name__)
 _fernet = None
 
 # ── Per-account TOTP attempt tracking (brute-force protection) ──────
-# Key: user identifier (email or user_id), Value: (attempts, first_attempt_time, locked_until)
-_totp_attempts: dict[str, tuple[int, float, float]] = {}
-TOTP_MAX_ATTEMPTS = 5       # Max failed TOTP attempts before lockout
-TOTP_WINDOW_SECONDS = 300   # 5-minute sliding window for attempt counting
-TOTP_LOCKOUT_SECONDS = 900  # 15-minute lockout after max attempts
+# Key: identifier (email or IP), Value: (attempts, first_attempt_time, locked_until, lockout_level)
+_totp_attempts: dict[str, tuple[int, float, float, int]] = {}
+TOTP_MAX_ATTEMPTS = 3          # Max failed TOTP attempts before lockout
+TOTP_WINDOW_SECONDS = 300      # 5-minute sliding window for attempt counting
+TOTP_BASE_LOCKOUT_MINUTES = 60 # Base lockout duration in minutes
+TOTP_LOCKOUT_MULTIPLIER = 5    # Escalation multiplier per successive lockout level
+
+
+def _lockout_duration(level: int) -> float:
+    """Compute lockout duration in seconds for a given lockout level."""
+    return TOTP_BASE_LOCKOUT_MINUTES * (TOTP_LOCKOUT_MULTIPLIER ** level) * 60
 
 
 def check_totp_lockout(identifier: str) -> bool:
-    """Check if an account is locked out from TOTP attempts. Returns True if locked."""
+    """Check if an IP is locked out from TOTP attempts. Returns True if locked."""
     entry = _totp_attempts.get(identifier)
     if not entry:
         return False
-    attempts, first_time, locked_until = entry
+    attempts, first_time, locked_until, level = entry
     now = time.time()
     if locked_until and now < locked_until:
         return True
-    # Window expired — reset
+    # Window expired — reset attempts but keep level
     if now - first_time > TOTP_WINDOW_SECONDS:
-        _totp_attempts.pop(identifier, None)
         return False
     return False
 
 
 def record_totp_failure(identifier: str) -> bool:
-    """Record a failed TOTP attempt. Returns True if account is now locked out."""
+    """Record a failed TOTP attempt. Returns True if IP is now locked out."""
     now = time.time()
     entry = _totp_attempts.get(identifier)
     if entry:
-        attempts, first_time, locked_until = entry
-        # If still locked, extend lockout
+        attempts, first_time, locked_until, level = entry
+        # If still locked, stay locked
         if locked_until and now < locked_until:
             return True
-        # Window expired — start fresh
+        # Window expired — start fresh with same level
         if now - first_time > TOTP_WINDOW_SECONDS:
-            _totp_attempts[identifier] = (1, now, 0)
+            _totp_attempts[identifier] = (1, now, 0, level)
             return False
         attempts += 1
         if attempts >= TOTP_MAX_ATTEMPTS:
-            _totp_attempts[identifier] = (attempts, first_time, now + TOTP_LOCKOUT_SECONDS)
+            new_level = level + 1
+            duration = _lockout_duration(new_level)
+            _totp_attempts[identifier] = (attempts, first_time, now + duration, new_level)
             return True
-        _totp_attempts[identifier] = (attempts, first_time, 0)
+        _totp_attempts[identifier] = (attempts, first_time, 0, level)
         return False
     else:
-        _totp_attempts[identifier] = (1, now, 0)
+        _totp_attempts[identifier] = (1, now, 0, 0)
         return False
 
 
 def clear_totp_attempts(identifier: str):
-    """Clear attempt counter on successful TOTP verification."""
-    _totp_attempts.pop(identifier, None)
+    """Clear attempt counter on successful TOTP verification (keeps lockout level)."""
+    entry = _totp_attempts.get(identifier)
+    if entry:
+        _, _, _, level = entry
+        _totp_attempts[identifier] = (0, time.time(), 0, level)
+
+
+async def sync_totp_lockout_to_db(db):
+    """Persist TOTP lockout state to database for restart survival."""
+    from app.models.security_state import TOTPLockout
+    import sqlalchemy
+
+    select = sqlalchemy.select(TOTPLockout)
+    for identifier, (attempts, first_time, locked_until, level) in dict(_totp_attempts).items():
+        existing = (await db.execute(
+            sqlalchemy.select(TOTPLockout).where(TOTPLockout.identifier == identifier)
+        )).scalar_one_or_none()
+        if existing:
+            existing.attempts = attempts
+            existing.first_attempt_at = first_time
+            existing.locked_until = locked_until
+            existing.lockout_level = level
+        else:
+            db.add(TOTPLockout(
+                identifier=identifier,
+                attempts=attempts,
+                first_attempt_at=first_time,
+                locked_until=locked_until,
+                lockout_level=level,
+            ))
+    await db.flush()
+
+
+async def load_totp_lockout_from_db(db):
+    """Load TOTP lockout state from database on startup."""
+    from app.models.security_state import TOTPLockout
+    import sqlalchemy
+
+    select = sqlalchemy.select(TOTPLockout)
+    delete = sqlalchemy.delete(TOTPLockout)
+    now = time.time()
+
+    # Clean up entries with expired lockouts and no active window
+    await db.execute(delete.where(TOTPLockout.locked_until < now))
+
+    result = (await db.execute(select)).scalars().all()
+    for row in result:
+        level = getattr(row, 'lockout_level', 0)
+        _totp_attempts[row.identifier] = (
+            row.attempts,
+            row.first_attempt_at,
+            row.locked_until,
+            level,
+        )
+    await db.flush()
 
 def _get_fernet():
     global _fernet

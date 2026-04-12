@@ -1,9 +1,10 @@
 """
 VajraKavach — Authentication Service
 Handles password hashing (Argon2), JWT token creation/verification,
-and in-memory token blocklist for revocation.
+and persistent token blocklist for revocation (DB-backed).
 """
 
+import hashlib
 import time
 from datetime import datetime, timedelta
 from typing import Optional
@@ -14,38 +15,82 @@ from app.config import settings
 # Argon2 password hashing context
 pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
 
-# In-memory JWT blocklist: {token_jti_or_raw: expiry_timestamp}
-_token_blocklist: dict[str, float] = {}
-_blocklist_last_cleanup: float = 0.0
+# Persistent token revocation: hash-based cache + pending DB writes
+_revoked_cache: set[str] = set()
+_pending_revocations: dict[str, float] = {}  # {token_hash: expiry_timestamp}
+_cache_last_refresh: float = 0.0
 
 
-def _cleanup_blocklist():
-    """Remove expired entries from the blocklist periodically."""
-    global _blocklist_last_cleanup
-    now = time.time()
-    if now - _blocklist_last_cleanup < 300:
-        return
-    expired = [k for k, exp in _token_blocklist.items() if exp < now]
-    for k in expired:
-        del _token_blocklist[k]
-    _blocklist_last_cleanup = now
+def _hash_token(token: str) -> str:
+    """SHA-256 hash a token for storage (don't store raw JWTs in DB)."""
+    return hashlib.sha256(token.encode()).hexdigest()
 
 
 def revoke_token(token: str):
-    """Add a token to the blocklist. It will remain until it naturally expires."""
-    _cleanup_blocklist()
+    """Add a token to the persistent blocklist via DB.
+    Falls back to in-memory if DB isn't available in this context."""
+    token_hash = _hash_token(token)
+    _revoked_cache.add(token_hash)
     try:
-        # Decode without verification to get expiry
         payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
         exp = payload.get("exp", time.time() + 3600)
     except JWTError:
         exp = time.time() + 3600
-    _token_blocklist[token] = exp
+    _pending_revocations[token_hash] = exp
+
+
+async def flush_pending_revocations(db):
+    """Write pending revocations to the database. Called from middleware or routes."""
+    from app.models.security_state import RevokedToken
+    import sqlalchemy
+
+    pending = dict(_pending_revocations)
+    _pending_revocations.clear()
+    for token_hash, exp_ts in pending.items():
+        select = sqlalchemy.select(RevokedToken).where(RevokedToken.token_hash == token_hash)
+        existing = (await db.execute(select)).scalar_one_or_none()
+        if not existing:
+            db.add(RevokedToken(
+                token_hash=token_hash,
+                expires_at=datetime.utcfromtimestamp(exp_ts),
+            ))
+    await db.flush()
+
+
+async def load_revoked_cache(db):
+    """Load active revoked tokens from DB into memory cache."""
+    global _cache_last_refresh
+    now = time.time()
+    if now - _cache_last_refresh < 30:
+        return
+    from app.models.security_state import RevokedToken
+    import sqlalchemy
+
+    select = sqlalchemy.select(RevokedToken.token_hash).where(
+        RevokedToken.expires_at >= datetime.utcnow()
+    )
+    _revoked_cache.clear()
+    result = (await db.execute(select)).scalars().all()
+    for row in result:
+        _revoked_cache.add(row)
+    _cache_last_refresh = now
+
+
+async def cleanup_expired_tokens(db):
+    """Remove expired tokens from DB."""
+    from app.models.security_state import RevokedToken
+    import sqlalchemy
+
+    delete = sqlalchemy.delete(RevokedToken).where(
+        RevokedToken.expires_at < datetime.utcnow()
+    )
+    await db.execute(delete)
+    await db.flush()
 
 
 def is_token_revoked(token: str) -> bool:
-    """Check if a token has been revoked."""
-    return token in _token_blocklist
+    """Check if a token has been revoked (memory cache check)."""
+    return _hash_token(token) in _revoked_cache
 
 
 def hash_password(password: str) -> str:

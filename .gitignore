@@ -16,12 +16,14 @@ venv/
 node_modules/
 frontend/dist/
 
-# Uploads & Certs (sensitive)
+# Uploads & Certs (sensitive — generated infrastructure)
 backend/uploads/*
 !backend/uploads/.gitkeep
 backend/certs/*.key
 backend/certs/*.pem
+backend/certs/*.crt
 !backend/certs/.gitkeep
+rootCA.pem
 
 # IDE
 .vscode/
@@ -38,9 +40,30 @@ Thumbs.db
 .frontend.pid
 logs/
 
-# Personal notes
+# Personal notes & internal documents
 currentproblems.txt
 resume_YashKumarVaibhav.pdf
+work.txt
+DEV_LOG.md
 
-# Reports (untracked)
+# Reports (LaTeX outputs, not source)
 reports/
+
+# Internal / non-source documents (course materials, assessments, references)
+project-details.md
+project-verification.md
+projectVerification-opus4.6.md
+security-assessment-plan.md
+sample-vpat.pdf
+VULNERABILITY_ASSESSMENT.md
+ATTACK_PROBABILITY_REPORT*.md
+
+# Reference images (not source)
+slide-ref1.png
+slide-ref2.png
+
+# Burp Scanner output
+issues.html
+
+# AI assistant config
+.claude/

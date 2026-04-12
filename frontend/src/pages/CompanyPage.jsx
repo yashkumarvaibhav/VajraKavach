@@ -3,6 +3,7 @@ import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
 import { Building2, Plus, Briefcase, MapPin, Globe, Search, ChevronDown, ChevronUp, Users as UsersIcon, Filter, SortAsc, Eye, Mail, FileText, CheckCircle, XCircle, Clock, Trash2, Edit, MessageSquare, Download, Lock, BarChart3 } from 'lucide-react';
+import Pagination from '../components/Pagination';
 import { toISTDate } from '../utils/time';
 
 const CURRENCIES = ['INR', 'USD', 'EUR', 'GBP'];
@@ -32,6 +33,9 @@ export default function CompanyPage() {
   const [expandedCompany, setExpandedCompany] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [browsePage, setBrowsePage] = useState(1);
+  const [jobsPage, setJobsPage] = useState(1);
+  const perPage = 20;
 
   const [companyForm, setCompanyForm] = useState({
     name: '', description: '', website: '', location: '', industry: '', size: '',
@@ -183,7 +187,7 @@ export default function CompanyPage() {
     const token = prompt('Enter your TOTP code to download this resume:');
     if (!token) return;
     try {
-      const res = await api.get(`/resumes/${resumeId}/download?totp_token=${encodeURIComponent(token)}`, { responseType: 'blob' });
+      const res = await api.get(`/resumes/${resumeId}/download`, { responseType: 'blob', headers: { 'X-TOTP-Token': token } });
       const url = window.URL.createObjectURL(new Blob([res.data]));
       const a = document.createElement('a');
       a.href = url;
@@ -263,6 +267,9 @@ export default function CompanyPage() {
 
   const inputClass = "w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none text-sm";
 
+  const [editingCompany, setEditingCompany] = useState(null);
+  const [editForm, setEditForm] = useState({});
+
   const CompanyCard = ({ company, showActions }) => (
     <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
       <div className="flex items-start justify-between">
@@ -270,25 +277,36 @@ export default function CompanyPage() {
           <h3 className="text-lg font-semibold text-gray-900">{company.name}</h3>
           {company.industry && <span className="text-xs bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full">{company.industry}</span>}
         </div>
-        {showActions && (
-          <button onClick={() => setExpandedCompany(expandedCompany === company.id ? null : company.id)}
-            className="p-1 hover:bg-gray-100 rounded">
-            {expandedCompany === company.id ? <ChevronUp className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}
-          </button>
-        )}
+        <button onClick={() => setExpandedCompany(expandedCompany === company.id ? null : company.id)}
+          className="p-1 hover:bg-gray-100 rounded">
+          {expandedCompany === company.id ? <ChevronUp className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}
+        </button>
       </div>
       {company.description && <p className="text-sm text-gray-600 mt-2 line-clamp-2">{company.description}</p>}
       <div className="flex items-center gap-4 mt-3 text-sm text-gray-500">
         {company.location && <span className="flex items-center gap-1"><MapPin className="h-3.5 w-3.5" />{company.location}</span>}
-        {company.website && <a href={company.website} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-primary-600 hover:underline"><Globe className="h-3.5 w-3.5" />{company.website}</a>}
+        {company.website && (/^https?:\/\//i.test(company.website) || !/^[a-z]+:/i.test(company.website)) && <a href={company.website.startsWith('http') ? company.website : `https://${company.website}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 text-primary-600 hover:underline"><Globe className="h-3.5 w-3.5" />{company.website}</a>}
         {company.size && <span>{company.size} employees</span>}
       </div>
-      {showActions && expandedCompany === company.id && (
-        <div className="mt-4 pt-4 border-t border-gray-100">
-          <button onClick={() => setPostingJobFor(company.id)}
-            className="flex items-center gap-1.5 px-4 py-2 bg-primary-600 text-white text-sm rounded-lg hover:bg-primary-700 transition">
-            <Briefcase className="h-4 w-4" /> Post a Job
-          </button>
+      {expandedCompany === company.id && (
+        <div className="mt-4 pt-4 border-t border-gray-100 space-y-2">
+          {company.description && <p className="text-sm text-gray-700">{company.description}</p>}
+          {company.industry && <p className="text-sm text-gray-600"><strong>Industry:</strong> {company.industry}</p>}
+          {company.size && <p className="text-sm text-gray-600"><strong>Company Size:</strong> {company.size} employees</p>}
+          {company.location && <p className="text-sm text-gray-600"><strong>Location:</strong> {company.location}</p>}
+          {company.website && <p className="text-sm text-gray-600"><strong>Website:</strong> <a href={company.website.startsWith('http') ? company.website : `https://${company.website}`} target="_blank" rel="noopener noreferrer" className="text-primary-600 hover:underline">{company.website}</a></p>}
+          {showActions && (
+            <div className="flex gap-2 mt-3">
+              <button onClick={() => setPostingJobFor(company.id)}
+                className="flex items-center gap-1.5 px-4 py-2 bg-primary-600 text-white text-sm rounded-lg hover:bg-primary-700 transition">
+                <Briefcase className="h-4 w-4" /> Post a Job
+              </button>
+              <button onClick={() => { setEditingCompany(company.id); setEditForm({ name: company.name, description: company.description || '', location: company.location || '', website: company.website || '', industry: company.industry || '', size: company.size || '' }); }}
+                className="flex items-center gap-1.5 px-4 py-2 border border-gray-300 text-gray-700 text-sm rounded-lg hover:bg-gray-50 transition">
+                <Edit className="h-4 w-4" /> Edit Company
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -386,7 +404,67 @@ export default function CompanyPage() {
             </div>
           ) : (
             <div className="space-y-4">
-              {companies.map(c => <CompanyCard key={c.id} company={c} showActions={true} />)}
+              {companies.map(c => (
+                <div key={c.id}>
+                  <CompanyCard company={c} showActions={true} />
+                  {editingCompany === c.id && (
+                    <form onSubmit={async (e) => {
+                      e.preventDefault();
+                      try {
+                        const submitForm = { ...editForm };
+                        if (submitForm.website && !submitForm.website.match(/^https?:\/\//i)) {
+                          submitForm.website = 'https://' + submitForm.website;
+                        }
+                        await api.put(`/companies/${c.id}`, submitForm);
+                        setEditingCompany(null);
+                        fetchMyCompanies();
+                      } catch (err) {
+                        setError(err.response?.data?.detail || 'Failed to update company');
+                      }
+                    }} className="bg-gray-50 rounded-b-xl border border-t-0 border-gray-100 p-6">
+                      <h3 className="text-lg font-semibold text-gray-900 mb-4">Edit Company</h3>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="col-span-2">
+                          <label className="text-sm font-medium text-gray-700 mb-1 block">Company Name</label>
+                          <input type="text" value={editForm.name} onChange={(e) => setEditForm(f => ({ ...f, name: e.target.value }))}
+                            maxLength={255} className={inputClass} />
+                        </div>
+                        <div className="col-span-2">
+                          <label className="text-sm font-medium text-gray-700 mb-1 block">Description</label>
+                          <textarea value={editForm.description} onChange={(e) => setEditForm(f => ({ ...f, description: e.target.value }))}
+                            maxLength={5000} className={inputClass + " h-20 resize-none"} />
+                        </div>
+                        <div>
+                          <label className="text-sm font-medium text-gray-700 mb-1 block">Location</label>
+                          <input type="text" value={editForm.location} onChange={(e) => setEditForm(f => ({ ...f, location: e.target.value }))}
+                            maxLength={255} className={inputClass} />
+                        </div>
+                        <div>
+                          <label className="text-sm font-medium text-gray-700 mb-1 block">Website</label>
+                          <input type="text" value={editForm.website} onChange={(e) => setEditForm(f => ({ ...f, website: e.target.value }))}
+                            maxLength={512} className={inputClass} />
+                        </div>
+                        <div>
+                          <label className="text-sm font-medium text-gray-700 mb-1 block">Industry</label>
+                          <input type="text" value={editForm.industry} onChange={(e) => setEditForm(f => ({ ...f, industry: e.target.value }))}
+                            maxLength={255} className={inputClass} placeholder="Technology" />
+                        </div>
+                        <div>
+                          <label className="text-sm font-medium text-gray-700 mb-1 block">Size</label>
+                          <input type="text" value={editForm.size} onChange={(e) => setEditForm(f => ({ ...f, size: e.target.value }))}
+                            maxLength={100} className={inputClass} placeholder="100-500" />
+                        </div>
+                      </div>
+                      <div className="flex justify-end gap-2 mt-4">
+                        <button type="button" onClick={() => setEditingCompany(null)}
+                          className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">Cancel</button>
+                        <button type="submit"
+                          className="px-4 py-2 text-sm bg-primary-600 text-white rounded-lg hover:bg-primary-700">Save Changes</button>
+                      </div>
+                    </form>
+                  )}
+                </div>
+              ))}
             </div>
           )}
         </div>
@@ -415,10 +493,12 @@ export default function CompanyPage() {
           </div>
           <p className="text-sm text-gray-500 mb-4">{filteredCompanies.length} companies</p>
           <div className="space-y-4">
-            {filteredCompanies.map(c => <CompanyCard key={c.id} company={c} showActions={false} />)}
+            {filteredCompanies.slice((browsePage - 1) * perPage, browsePage * perPage).map(c => <CompanyCard key={c.id} company={c} showActions={false} />)}
             {filteredCompanies.length === 0 && (
               <div className="text-center py-8 text-gray-400">No companies found</div>
             )}
+            <Pagination currentPage={browsePage} totalPages={Math.ceil(filteredCompanies.length / perPage)}
+              totalItems={filteredCompanies.length} onPageChange={setBrowsePage} itemLabel="companies" />
           </div>
         </div>
       )}
@@ -433,7 +513,7 @@ export default function CompanyPage() {
             </div>
           ) : (
             <div className="space-y-3">
-              {myJobs.map(job => (
+              {myJobs.slice((jobsPage - 1) * perPage, jobsPage * perPage).map(job => (
                 <div key={job.id} className="bg-white rounded-xl shadow-sm border border-gray-100">
                   <div className="p-5 cursor-pointer" onClick={() => fetchApplicants(job.id)}>
                     <div className="flex items-start justify-between">
@@ -590,6 +670,10 @@ export default function CompanyPage() {
                 </div>
               ))}
             </div>
+          )}
+          {myJobs.length > 0 && (
+            <Pagination currentPage={jobsPage} totalPages={Math.ceil(myJobs.length / perPage)}
+              totalItems={myJobs.length} onPageChange={setJobsPage} itemLabel="jobs" />
           )}
         </div>
       )}

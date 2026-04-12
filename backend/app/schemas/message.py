@@ -10,8 +10,8 @@ from datetime import datetime
 class MessageSend(BaseModel):
     conversation_id: Optional[str] = None
     recipient_id: Optional[str] = None  # Optional for group messages
-    ciphertext: str = Field(..., max_length=100000)
-    signature: Optional[str] = None
+    ciphertext: str = Field(..., max_length=10000)
+    signature: Optional[str] = Field(None, max_length=2048)
 
 
 class MessageResponse(BaseModel):
@@ -34,9 +34,13 @@ class ConversationResponse(BaseModel):
     id: str
     name: Optional[str] = None
     is_group: bool
+    is_archived: bool = False
+    has_left: bool = False              # whether the requesting user has left
     partner_id: Optional[str] = None
     partner_name: Optional[str] = None
     member_count: Optional[int] = None  # For group chats
+    created_by: Optional[str] = None    # Group creator user ID
+    created_by_name: Optional[str] = None
     created_at: datetime
     last_message_at: Optional[datetime] = None
 
@@ -52,4 +56,6 @@ class GroupCreate(BaseModel):
 class GroupMemberResponse(BaseModel):
     user_id: str
     full_name: str
+    is_creator: bool = False
+    has_left: bool = False
     joined_at: datetime

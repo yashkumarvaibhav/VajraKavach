@@ -9,7 +9,6 @@ set -e
 
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PIDFILE_BACKEND="$PROJECT_DIR/.backend.pid"
-PIDFILE_FRONTEND="$PROJECT_DIR/.frontend.pid"
 
 # Colors
 GREEN='\033[0;32m'
@@ -27,71 +26,18 @@ STOPPED_SOMETHING=false
 
 # ── Stop Backend ──────────────────────────────────────────────────────
 
-stop_pid_tree() {
-    local PID=$1
-    # Kill all children first, then the parent — avoids process-group kill
-    local CHILDREN
-    CHILDREN=$(pgrep -P "$PID" 2>/dev/null || true)
-    for CHILD in $CHILDREN; do
-        stop_pid_tree "$CHILD"
-    done
-    kill "$PID" 2>/dev/null || true
-}
-
-if [[ -f "$PIDFILE_BACKEND" ]]; then
-    BACKEND_PID=$(cat "$PIDFILE_BACKEND")
-    if kill -0 "$BACKEND_PID" 2>/dev/null; then
-        echo -e "${YELLOW}■  Stopping backend (PID $BACKEND_PID)...${NC}"
-        # Kill pid tree (parent + children) — SSH-safe, no process-group kill
-        stop_pid_tree "$BACKEND_PID"
-        # Wait for it to terminate
-        for i in $(seq 1 10); do
-            if ! kill -0 "$BACKEND_PID" 2>/dev/null; then
-                break
-            fi
-            sleep 0.5
-        done
-        # Force kill if still alive
-        if kill -0 "$BACKEND_PID" 2>/dev/null; then
-            echo -e "${RED}   Force killing backend...${NC}"
-            kill -9 "$BACKEND_PID" 2>/dev/null || true
-        fi
-        echo -e "${GREEN}✔  Backend stopped${NC}"
-        STOPPED_SOMETHING=true
-    else
-        echo -e "${YELLOW}⚠  Backend PID $BACKEND_PID is no longer running${NC}"
-    fi
-    rm -f "$PIDFILE_BACKEND"
+echo -e "${YELLOW}■  Stopping backend (systemd service)...${NC}"
+if sudo systemctl is-active --quiet vajrakavach-backend; then
+    sudo systemctl stop vajrakavach-backend
+    echo -e "${GREEN}✔  Backend stopped${NC}"
+    STOPPED_SOMETHING=true
 else
-    echo -e "${YELLOW}⚠  No backend PID file found${NC}"
+    echo -e "${YELLOW}⚠  Backend service was not running${NC}"
 fi
+rm -f "$PIDFILE_BACKEND"
 
-# ── Stop Frontend ─────────────────────────────────────────────────────
-
-if [[ -f "$PIDFILE_FRONTEND" ]]; then
-    FRONTEND_PID=$(cat "$PIDFILE_FRONTEND")
-    if kill -0 "$FRONTEND_PID" 2>/dev/null; then
-        echo -e "${YELLOW}■  Stopping frontend (PID $FRONTEND_PID)...${NC}"
-        stop_pid_tree "$FRONTEND_PID"
-        for i in $(seq 1 10); do
-            if ! kill -0 "$FRONTEND_PID" 2>/dev/null; then
-                break
-            fi
-            sleep 0.5
-        done
-        if kill -0 "$FRONTEND_PID" 2>/dev/null; then
-            echo -e "${RED}   Force killing frontend...${NC}"
-            kill -9 "$FRONTEND_PID" 2>/dev/null || true
-        fi
-        echo -e "${GREEN}✔  Frontend stopped${NC}"
-        STOPPED_SOMETHING=true
-    else
-        echo -e "${YELLOW}⚠  Frontend PID $FRONTEND_PID is no longer running${NC}"
-    fi
-    rm -f "$PIDFILE_FRONTEND"
-else
-    echo -e "${YELLOW}⚠  No frontend PID file found${NC}"
-fi
+# Frontend is static — no process to stop
+echo -e "${GREEN}✔  Frontend is static (served by nginx) — no process to stop${NC}"
 
 # ── Cleanup orphaned processes on known ports ─────────────────────────
 
@@ -111,7 +57,6 @@ cleanup_port() {
 }
 
 cleanup_port 8000 "backend"
-cleanup_port 5173 "frontend"
 
 # ── Summary ───────────────────────────────────────────────────────────
 

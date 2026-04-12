@@ -100,6 +100,9 @@ export function AuthProvider({ children }) {
     } catch (err) {
       if (err.response?.status === 403 && err.response?.data?.detail?.includes('TOTP')) {
         setTotpRequired(true);
+      } else if (err.response?.status === 429) {
+        // Rate limited — don't clear session, just retry later
+        console.warn('Rate limited on /auth/me, keeping session');
       } else {
         clearClientSession();
       }

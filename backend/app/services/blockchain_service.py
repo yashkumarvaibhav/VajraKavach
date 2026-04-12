@@ -98,11 +98,21 @@ async def get_unblocked_entries(db: AsyncSession) -> List[AuditLog]:
                 if eid:
                     blocked_ids.add(eid)
 
-        result = await db.execute(
-            select(AuditLog).order_by(AuditLog.created_at).limit(BLOCK_SIZE * 2)
-        )
-        entries = result.scalars().all()
-        return [e for e in entries if str(e.id) not in blocked_ids][:BLOCK_SIZE]
+        # Convert blocked_ids to UUIDs for proper SQL filtering
+        blocked_uuid_list = [uuid.UUID(eid) for eid in blocked_ids if eid]
+
+        if blocked_uuid_list:
+            result = await db.execute(
+                select(AuditLog)
+                .where(AuditLog.id.notin_(blocked_uuid_list))
+                .order_by(AuditLog.created_at)
+                .limit(BLOCK_SIZE)
+            )
+        else:
+            result = await db.execute(
+                select(AuditLog).order_by(AuditLog.created_at).limit(BLOCK_SIZE)
+            )
+        return result.scalars().all()
     else:
         result = await db.execute(
             select(AuditLog).order_by(AuditLog.created_at).limit(BLOCK_SIZE)

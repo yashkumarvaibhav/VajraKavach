@@ -38,6 +38,38 @@ async function importPublicKey(pem) {
 }
 
 /**
+ * Import an RSA private key from PEM for signing (RSA-PSS).
+ */
+async function importPrivateKeyForSigning(pem) {
+  const keyData = pemToArrayBuffer(pem);
+  return crypto.subtle.importKey(
+    'pkcs8',
+    keyData,
+    { name: 'RSA-PSS', hash: 'SHA-256' },
+    false,
+    ['sign']
+  );
+}
+
+/**
+ * Sign a plaintext message with the sender's RSA private key (RSA-PSS SHA-256).
+ * Returns a base64-encoded signature.
+ */
+export async function signMessage(plaintext, privateKeyPem) {
+  const key = await importPrivateKeyForSigning(privateKeyPem);
+  const encoded = new TextEncoder().encode(plaintext);
+  const sig = await crypto.subtle.sign(
+    { name: 'RSA-PSS', saltLength: 32 },
+    key,
+    encoded
+  );
+  let binary = '';
+  const bytes = new Uint8Array(sig);
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+  return btoa(binary);
+}
+
+/**
  * Import an RSA private key from PEM for decryption.
  */
 async function importPrivateKey(pem) {

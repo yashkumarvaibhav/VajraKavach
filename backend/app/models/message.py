@@ -16,6 +16,7 @@ class Conversation(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name = Column(String(255), nullable=True)           # for group chats
     is_group = Column(Boolean, default=False)
+    is_archived = Column(Boolean, default=False)        # group archived by creator (read-only)
     created_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
@@ -32,6 +33,7 @@ class ConversationMember(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     conversation_id = Column(UUID(as_uuid=True), ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False, index=True)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    has_left = Column(Boolean, default=False)           # member left group but can still read
     joined_at = Column(DateTime, default=datetime.utcnow)
 
     conversation = relationship("Conversation", back_populates="members")

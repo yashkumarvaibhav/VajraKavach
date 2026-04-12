@@ -7,7 +7,8 @@ Server stores ONLY ciphertext.
 import uuid
 import base64
 import json
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+import asyncio
+from fastapi import APIRouter, Depends, HTTPException, status, Request, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_, and_, func
 
@@ -15,12 +16,14 @@ from app.database import get_db
 from app.models.message import Message, Conversation, ConversationMember
 from app.models.announcement import Announcement
 from app.models.user import User
+from app.models.connection import Connection, ConnectionStatus
 from app.schemas.message import MessageSend, MessageResponse, ConversationResponse, GroupCreate, GroupMemberResponse
 from app.schemas.announcement import AnnouncementCreate, AnnouncementResponse
 from app.dependencies import get_current_user, require_role
 from app.services.audit_service import create_audit_log
 from app.services.encryption_service import encrypt_data, decrypt_data
 from app.utils.ip import get_client_ip
+from app.services.action_rate_limit_service import check_action_rate_limit, record_action
 
 router = APIRouter(prefix="/api/messages", tags=["Messaging"])
 
@@ -133,6 +136,8 @@ async def send_message(
     For 1-to-1: provide recipient_id (conversation_id optional).
     For group: provide conversation_id (recipient_id optional).
     """
+    await check_action_rate_limit(db, "message_send", str(current_user.id))
+
     conversation_id = req.conversation_id
     is_group_message = False
 
@@ -147,6 +152,9 @@ async def send_message(
 
         is_group_message = bool(conv.is_group)
         if conv.is_group:
+            # Reject messages to archived groups
+            if conv.is_archived:
+                raise HTTPException(status_code=403, detail="This group has been archived. No new messages allowed.")
             # Check membership
             member_check = await db.execute(
                 select(ConversationMember).where(
@@ -154,11 +162,26 @@ async def send_message(
                     ConversationMember.user_id == current_user.id,
                 )
             )
-            if not member_check.scalar_one_or_none():
+            member = member_check.scalar_one_or_none()
+            if not member:
                 raise HTTPException(status_code=403, detail="Not a member of this group")
+            if member.has_left:
+                raise HTTPException(status_code=403, detail="You have left this group. You cannot send messages.")
     else:
         if not req.recipient_id:
             raise HTTPException(status_code=400, detail="Either conversation_id or recipient_id is required")
+        # Enforce accepted connection before allowing DMs
+        conn_check = await db.execute(
+            select(Connection).where(
+                Connection.status == ConnectionStatus.ACCEPTED,
+                or_(
+                    and_(Connection.requester_id == current_user.id, Connection.addressee_id == req.recipient_id),
+                    and_(Connection.requester_id == req.recipient_id, Connection.addressee_id == current_user.id),
+                ),
+            )
+        )
+        if not conn_check.scalar_one_or_none():
+            raise HTTPException(status_code=403, detail="You can only message users you are connected with")
         # Try to find an existing 1-to-1 conversation
         existing = await _find_existing_conversation(
             db, str(current_user.id), req.recipient_id
@@ -201,6 +224,32 @@ async def send_message(
         details={"conversation_id": conversation_id, "recipient_id": req.recipient_id},
         ip_address=get_client_ip(request),
     )
+
+    # Push real-time WebSocket notification to conversation participants
+    from app.routes.websocket import notify_conversation
+    ws_event = {
+        "type": "new_message",
+        "conversation_id": conversation_id,
+        "sender_id": str(current_user.id),
+        "sender_name": current_user.full_name,
+    }
+    notify_targets = []
+    if is_group_message:
+        # Notify all group members
+        members_result = await db.execute(
+            select(ConversationMember.user_id).where(
+                ConversationMember.conversation_id == uuid.UUID(conversation_id),
+                ConversationMember.has_left == False,
+            )
+        )
+        notify_targets = [str(r[0]) for r in members_result.fetchall()]
+    else:
+        notify_targets = [str(current_user.id)]
+        if req.recipient_id:
+            notify_targets.append(req.recipient_id)
+    asyncio.create_task(notify_conversation(notify_targets, ws_event))
+
+    await record_action(db, "message_send", str(current_user.id))
 
     return MessageResponse(
         id=str(message.id),
@@ -271,15 +320,36 @@ async def list_conversations(
         partner_id = None
         partner_name = None
         member_count = None
+        is_archived = False
+        has_left = False
+        created_by_name = None
 
         if c.is_group:
-            # Count members
+            is_archived = bool(c.is_archived)
+            # Count active members (not left)
             count_result = await db.execute(
                 select(func.count(ConversationMember.id)).where(
-                    ConversationMember.conversation_id == c.id
+                    ConversationMember.conversation_id == c.id,
+                    ConversationMember.has_left == False,
                 )
             )
             member_count = count_result.scalar() or 0
+            # Check if current user has left
+            my_member = await db.execute(
+                select(ConversationMember).where(
+                    ConversationMember.conversation_id == c.id,
+                    ConversationMember.user_id == current_user.id,
+                )
+            )
+            my_membership = my_member.scalar_one_or_none()
+            if my_membership:
+                has_left = bool(my_membership.has_left)
+            # Get creator name
+            if c.created_by:
+                creator_res = await db.execute(select(User).where(User.id == c.created_by))
+                creator_user = creator_res.scalar_one_or_none()
+                if creator_user:
+                    created_by_name = creator_user.full_name
         else:
             # Find the other user in this conversation
             msg_result = await db.execute(
@@ -303,9 +373,13 @@ async def list_conversations(
             id=str(c.id),
             name=c.name or partner_name,
             is_group=c.is_group,
+            is_archived=is_archived,
+            has_left=has_left,
             partner_id=partner_id,
             partner_name=partner_name,
             member_count=member_count,
+            created_by=str(c.created_by) if c.created_by else None,
+            created_by_name=created_by_name,
             created_at=c.created_at,
             last_message_at=last_msg_time,
         ))
@@ -319,6 +393,8 @@ async def list_conversations(
 @router.get("/conversations/{conversation_id}", response_model=list[MessageResponse])
 async def get_conversation_messages(
     conversation_id: str,
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -340,8 +416,10 @@ async def get_conversation_messages(
                 ConversationMember.user_id == current_user.id,
             )
         )
-        if not member_check.scalar_one_or_none():
+        member = member_check.scalar_one_or_none()
+        if not member:
             raise HTTPException(status_code=403, detail="Not a member of this group")
+        # Members who left can still read (has_left=True is allowed here)
     else:
         result = await db.execute(
             select(Message).where(
@@ -359,6 +437,8 @@ async def get_conversation_messages(
         select(Message)
         .where(Message.conversation_id == conversation_id)
         .order_by(Message.created_at)
+        .offset(offset)
+        .limit(limit)
     )
     messages = result.scalars().all()
 
@@ -430,8 +510,26 @@ async def delete_message(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Message not found")
 
     uid = str(current_user.id)
-    # Verify user is a participant
-    if uid != str(msg.sender_id) and uid != str(msg.recipient_id):
+
+    # For group messages, check group membership; for DMs, check sender/recipient
+    conv_result = await db.execute(
+        select(Conversation).where(Conversation.id == msg.conversation_id)
+    )
+    conv = conv_result.scalar_one_or_none()
+
+    is_participant = False
+    if conv and conv.is_group:
+        member_check = await db.execute(
+            select(ConversationMember).where(
+                ConversationMember.conversation_id == msg.conversation_id,
+                ConversationMember.user_id == current_user.id,
+            )
+        )
+        is_participant = member_check.scalar_one_or_none() is not None
+    else:
+        is_participant = uid == str(msg.sender_id) or uid == str(msg.recipient_id)
+
+    if not is_participant:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not your message")
 
     if for_everyone:
@@ -490,6 +588,8 @@ async def create_group(
     current_user: User = Depends(get_current_user),
 ):
     """Create a new group conversation with specified members."""
+    await check_action_rate_limit(db, "group_create", str(current_user.id))
+
     conv = Conversation(
         id=uuid.uuid4(),
         name=req.name,
@@ -532,6 +632,8 @@ async def create_group(
         ip_address=get_client_ip(request),
     )
 
+    await record_action(db, "group_create", str(current_user.id))
+
     return ConversationResponse(
         id=str(conv.id),
         name=conv.name,
@@ -539,6 +641,10 @@ async def create_group(
         partner_id=None,
         partner_name=None,
         member_count=added,
+        created_by=str(conv.created_by) if conv.created_by else None,
+        created_by_name=current_user.full_name,
+        is_archived=False,
+        has_left=False,
         created_at=conv.created_at,
     )
 
@@ -550,7 +656,7 @@ async def get_group_members(
     current_user: User = Depends(get_current_user),
 ):
     """Get all members of a group conversation."""
-    # Verify membership
+    # Verify membership (including left members who can still view)
     member_check = await db.execute(
         select(ConversationMember).where(
             ConversationMember.conversation_id == uuid.UUID(group_id),
@@ -559,6 +665,13 @@ async def get_group_members(
     )
     if not member_check.scalar_one_or_none():
         raise HTTPException(status_code=403, detail="Not a member of this group")
+
+    # Get group to check creator
+    conv_result = await db.execute(
+        select(Conversation).where(Conversation.id == group_id)
+    )
+    conv = conv_result.scalar_one_or_none()
+    creator_id = str(conv.created_by) if conv and conv.created_by else None
 
     result = await db.execute(
         select(ConversationMember).where(
@@ -574,6 +687,8 @@ async def get_group_members(
         responses.append(GroupMemberResponse(
             user_id=str(m.user_id),
             full_name=u.full_name if u else "Unknown",
+            is_creator=(str(m.user_id) == creator_id) if creator_id else False,
+            has_left=bool(m.has_left),
             joined_at=m.joined_at,
         ))
     return responses
@@ -586,16 +701,20 @@ async def add_group_member(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Add a member to a group conversation (only existing members can add)."""
-    # Verify requester is a member
-    member_check = await db.execute(
-        select(ConversationMember).where(
-            ConversationMember.conversation_id == uuid.UUID(group_id),
-            ConversationMember.user_id == current_user.id,
-        )
+    """Add a member to a group conversation (creator/admin only)."""
+    # Verify group exists and requester is creator
+    conv_result = await db.execute(
+        select(Conversation).where(Conversation.id == group_id)
     )
-    if not member_check.scalar_one_or_none():
-        raise HTTPException(status_code=403, detail="Not a member of this group")
+    conv = conv_result.scalar_one_or_none()
+    if not conv or not conv.is_group:
+        raise HTTPException(status_code=404, detail="Group not found")
+
+    if not conv.created_by or str(conv.created_by) != str(current_user.id):
+        raise HTTPException(status_code=403, detail="Only the group creator can add members")
+
+    if conv.is_archived:
+        raise HTTPException(status_code=400, detail="Cannot add members to an archived group")
 
     # Check if user already a member
     existing = await db.execute(
@@ -629,7 +748,7 @@ async def remove_group_member(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Remove a member from a group (the creator or the member themselves can remove)."""
+    """Remove a member from a group (creator/admin only)."""
     conv_result = await db.execute(
         select(Conversation).where(Conversation.id == group_id)
     )
@@ -637,11 +756,14 @@ async def remove_group_member(
     if not conv or not conv.is_group:
         raise HTTPException(status_code=404, detail="Group not found")
 
-    # Allow: creator removes anyone, or user removes themselves
-    is_creator = conv.created_by and str(conv.created_by) == str(current_user.id)
-    is_self = str(current_user.id) == user_id
-    if not is_creator and not is_self:
-        raise HTTPException(status_code=403, detail="Only the group creator or the member themselves can remove")
+    if not conv.created_by or str(conv.created_by) != str(current_user.id):
+        raise HTTPException(status_code=403, detail="Only the group creator can remove members")
+
+    if str(current_user.id) == user_id:
+        raise HTTPException(status_code=400, detail="Creator cannot remove themselves. Use delete group instead.")
+
+    if conv.is_archived:
+        raise HTTPException(status_code=400, detail="Cannot remove members from an archived group")
 
     member_result = await db.execute(
         select(ConversationMember).where(
@@ -655,6 +777,117 @@ async def remove_group_member(
 
     await db.delete(member)
     await db.flush()
+
+
+@router.post("/groups/{group_id}/leave")
+async def leave_group(
+    group_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Leave a group. The member stays in the group with has_left=True so they can still read messages."""
+    conv_result = await db.execute(
+        select(Conversation).where(Conversation.id == group_id)
+    )
+    conv = conv_result.scalar_one_or_none()
+    if not conv or not conv.is_group:
+        raise HTTPException(status_code=404, detail="Group not found")
+
+    if conv.created_by and str(conv.created_by) == str(current_user.id):
+        raise HTTPException(status_code=400, detail="Group creator cannot leave. Use delete group to archive instead.")
+
+    member_result = await db.execute(
+        select(ConversationMember).where(
+            ConversationMember.conversation_id == uuid.UUID(group_id),
+            ConversationMember.user_id == current_user.id,
+        )
+    )
+    member = member_result.scalar_one_or_none()
+    if not member:
+        raise HTTPException(status_code=404, detail="You are not a member of this group")
+    if member.has_left:
+        raise HTTPException(status_code=400, detail="You have already left this group")
+
+    member.has_left = True
+    await db.flush()
+    return {"detail": "You have left the group. You can still view old messages."}
+
+
+@router.post("/groups/{group_id}/delete-for-me")
+async def delete_group_for_me(
+    group_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Leave a group AND soft-delete all messages for this user. The group disappears from their list."""
+    conv_result = await db.execute(
+        select(Conversation).where(Conversation.id == group_id)
+    )
+    conv = conv_result.scalar_one_or_none()
+    if not conv or not conv.is_group:
+        raise HTTPException(status_code=404, detail="Group not found")
+
+    if conv.created_by and str(conv.created_by) == str(current_user.id):
+        raise HTTPException(status_code=400, detail="Group creator cannot delete for themselves. Use delete group to archive instead.")
+
+    member_result = await db.execute(
+        select(ConversationMember).where(
+            ConversationMember.conversation_id == uuid.UUID(group_id),
+            ConversationMember.user_id == current_user.id,
+        )
+    )
+    member = member_result.scalar_one_or_none()
+    if not member:
+        raise HTTPException(status_code=404, detail="You are not a member of this group")
+
+    # Soft-delete all messages for this user
+    uid = str(current_user.id)
+    msgs_result = await db.execute(
+        select(Message).where(Message.conversation_id == uuid.UUID(group_id))
+    )
+    for msg in msgs_result.scalars().all():
+        deleted_for = msg.deleted_for or []
+        if uid not in deleted_for:
+            msg.deleted_for = deleted_for + [uid]
+
+    # Remove the member record entirely so the group disappears from their list
+    await db.delete(member)
+    await db.flush()
+    return {"detail": "Group deleted for you. Messages and group removed from your list."}
+
+
+@router.delete("/groups/{group_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_group(
+    group_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Archive a group (creator only). The group becomes read-only but messages remain visible to all members."""
+    conv_result = await db.execute(
+        select(Conversation).where(Conversation.id == group_id)
+    )
+    conv = conv_result.scalar_one_or_none()
+    if not conv or not conv.is_group:
+        raise HTTPException(status_code=404, detail="Group not found")
+
+    if not conv.created_by or str(conv.created_by) != str(current_user.id):
+        raise HTTPException(status_code=403, detail="Only the group creator can delete the group")
+
+    if conv.is_archived:
+        raise HTTPException(status_code=400, detail="Group is already archived")
+
+    conv.is_archived = True
+    await db.flush()
+
+    await create_audit_log(
+        db=db,
+        action="group.archive",
+        user_id=str(current_user.id),
+        resource="conversation",
+        resource_id=group_id,
+        ip_address=get_client_ip(request),
+    )
 
 
 # ─── Admin Announcements (Server-Side Encrypted) ──────────────────

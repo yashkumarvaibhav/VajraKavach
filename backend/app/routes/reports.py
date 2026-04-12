@@ -17,6 +17,7 @@ from app.models.user import User
 from app.dependencies import get_current_user, require_role
 from app.services.audit_service import create_audit_log
 from app.utils.ip import get_client_ip
+from app.services.action_rate_limit_service import check_action_rate_limit, record_action
 
 router = APIRouter(prefix="/api/reports", tags=["Reports"])
 
@@ -27,8 +28,8 @@ class ReportCreate(BaseModel):
     reported_user_id: Optional[str] = None
     category: str = Field(..., description="spam, harassment, fraud, inappropriate, impersonation, other")
     description: str = Field(..., max_length=2000, min_length=5)
-    resource_type: Optional[str] = None  # 'user', 'message', 'job'
-    resource_id: Optional[str] = None
+    resource_type: Optional[str] = Field(None, max_length=50)
+    resource_id: Optional[str] = Field(None, max_length=255)
 
 
 class ReportResponse(BaseModel):
@@ -64,6 +65,8 @@ async def create_report(
     current_user: User = Depends(get_current_user),
 ):
     """Submit a report / flag content or a user."""
+    await check_action_rate_limit(db, "report_create", str(current_user.id))
+
     # Validate category
     try:
         category = ReportCategory(req.category)
@@ -108,6 +111,8 @@ async def create_report(
         },
         ip_address=get_client_ip(request),
     )
+
+    await record_action(db, "report_create", str(current_user.id))
 
     return ReportResponse(
         id=str(report.id),
@@ -163,7 +168,7 @@ async def get_my_reports(
 
 @router.get("/admin/all", response_model=list[ReportResponse])
 async def admin_get_all_reports(
-    status_filter: Optional[str] = Query(None),
+    status_filter: Optional[str] = Query(None, max_length=50),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role("admin", "platform_admin")),
 ):

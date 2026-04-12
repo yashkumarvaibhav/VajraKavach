@@ -14,13 +14,13 @@ class JobCreate(BaseModel):
     company_id: str
     title: str = Field(..., min_length=1, max_length=255)
     description: str = Field(..., min_length=1, max_length=10000)
-    required_skills: Optional[List[str]] = None
+    required_skills: Optional[List[str]] = Field(None, max_length=50)
     location: Optional[str] = Field(None, max_length=255)
     location_type: Literal["remote", "onsite", "hybrid"] = "onsite"
     job_type: Literal["full_time", "part_time", "internship", "contract"] = "full_time"
-    salary_min: Optional[str] = None
-    salary_max: Optional[str] = None
-    salary_currency: str = "INR"
+    salary_min: Optional[str] = Field(None, max_length=50)
+    salary_max: Optional[str] = Field(None, max_length=50)
+    salary_currency: str = Field("INR", max_length=5)
     application_deadline: Optional[date] = None
 
     @field_validator("application_deadline")
@@ -54,13 +54,13 @@ class JobCreate(BaseModel):
 class JobUpdate(BaseModel):
     title: Optional[str] = Field(None, max_length=255)
     description: Optional[str] = Field(None, max_length=10000)
-    required_skills: Optional[List[str]] = None
+    required_skills: Optional[List[str]] = Field(None, max_length=50)
     location: Optional[str] = Field(None, max_length=255)
-    location_type: Optional[str] = None
-    job_type: Optional[str] = None
-    salary_min: Optional[str] = None
-    salary_max: Optional[str] = None
-    salary_currency: Optional[str] = None
+    location_type: Optional[Literal["remote", "onsite", "hybrid"]] = None
+    job_type: Optional[Literal["full_time", "part_time", "internship", "contract"]] = None
+    salary_min: Optional[str] = Field(None, max_length=50)
+    salary_max: Optional[str] = Field(None, max_length=50)
+    salary_currency: Optional[str] = Field(None, max_length=5)
     application_deadline: Optional[date] = None
     is_active: Optional[bool] = None
 
@@ -129,6 +129,7 @@ class ApplicationResponse(BaseModel):
     job_id: str
     job_title: Optional[str] = None
     company_name: Optional[str] = None
+    job_is_active: bool = True
     user_id: str
     applicant_name: Optional[str] = None
     applicant_email: Optional[str] = None

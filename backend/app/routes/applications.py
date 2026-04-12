@@ -4,6 +4,7 @@ Apply, track, update application status.
 """
 
 import uuid
+from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -17,6 +18,7 @@ from app.schemas.job import ApplicationCreate, ApplicationStatusUpdate, Applicat
 from app.dependencies import get_current_user, require_role
 from app.services.audit_service import create_audit_log
 from app.utils.ip import get_client_ip
+from app.services.action_rate_limit_service import check_action_rate_limit, record_action
 
 router = APIRouter(prefix="/api/applications", tags=["Applications"])
 
@@ -25,6 +27,7 @@ async def _enrich_application(db: AsyncSession, app: Application) -> Application
     """Build an enriched ApplicationResponse with job/company/applicant info."""
     job_title = None
     company_name = None
+    job_is_active = True
     applicant_name = None
     applicant_email = None
 
@@ -33,6 +36,7 @@ async def _enrich_application(db: AsyncSession, app: Application) -> Application
     job = job_result.scalar_one_or_none()
     if job:
         job_title = job.title
+        job_is_active = job.is_active
         # Get company info
         comp_result = await db.execute(select(Company).where(Company.id == job.company_id))
         comp = comp_result.scalar_one_or_none()
@@ -60,6 +64,7 @@ async def _enrich_application(db: AsyncSession, app: Application) -> Application
         job_id=str(app.job_id),
         job_title=job_title,
         company_name=company_name,
+        job_is_active=job_is_active,
         user_id=str(app.user_id),
         applicant_name=applicant_name,
         applicant_email=applicant_email,
@@ -80,10 +85,15 @@ async def apply_to_job(
     current_user: User = Depends(get_current_user),
 ):
     """Apply to a job posting."""
+    await check_action_rate_limit(db, "job_apply", str(current_user.id))
+
     result = await db.execute(select(Job).where(Job.id == req.job_id, Job.is_active == True))
     job = result.scalar_one_or_none()
     if not job:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found or inactive")
+
+    if job.application_deadline and job.application_deadline < date.today():
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Application deadline has passed")
 
     existing = await db.execute(
         select(Application).where(
@@ -114,6 +124,8 @@ async def apply_to_job(
         details={"job_id": req.job_id},
         ip_address=get_client_ip(request),
     )
+
+    await record_action(db, "job_apply", str(current_user.id))
 
     return await _enrich_application(db, application)
 

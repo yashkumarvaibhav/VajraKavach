@@ -11,10 +11,8 @@ PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BACKEND_DIR="$PROJECT_DIR/backend"
 FRONTEND_DIR="$PROJECT_DIR/frontend"
 PIDFILE_BACKEND="$PROJECT_DIR/.backend.pid"
-PIDFILE_FRONTEND="$PROJECT_DIR/.frontend.pid"
 LOG_DIR="$PROJECT_DIR/logs"
 BACKEND_HEALTH_URL="http://127.0.0.1:8000/health"
-FRONTEND_HEALTH_URL="http://127.0.0.1:5173"
 
 # Colors
 GREEN='\033[0;32m'
@@ -66,17 +64,6 @@ else
     rm -f "$PIDFILE_BACKEND"
 fi
 
-if [[ -f "$PIDFILE_FRONTEND" ]] && kill -0 "$(cat "$PIDFILE_FRONTEND")" 2>/dev/null; then
-    echo -e "${YELLOW}⚠  Frontend is already running (PID $(cat "$PIDFILE_FRONTEND"))${NC}"
-    FRONTEND_RUNNING=true
-elif healthcheck_ok "$FRONTEND_HEALTH_URL"; then
-    echo -e "${YELLOW}⚠  Frontend is already running on port 5173 (no PID file found)${NC}"
-    FRONTEND_RUNNING=true
-else
-    FRONTEND_RUNNING=false
-    rm -f "$PIDFILE_FRONTEND"
-fi
-
 # Check PostgreSQL
 if command -v pg_isready &>/dev/null; then
     if pg_isready -q 2>/dev/null; then
@@ -97,55 +84,37 @@ if [[ ! -d "$BACKEND_DIR/venv" ]]; then
     exit 1
 fi
 
-# Check Node modules
-if [[ ! -d "$FRONTEND_DIR/node_modules" ]]; then
-    echo -e "${YELLOW}⚠  node_modules not found. Installing dependencies...${NC}"
-    cd "$FRONTEND_DIR" && npm install
+# Build frontend if dist doesn't exist
+if [[ ! -d "$FRONTEND_DIR/dist" ]]; then
+    echo -e "${YELLOW}⚠  Frontend build not found. Building...${NC}"
+    if [[ ! -d "$FRONTEND_DIR/node_modules" ]]; then
+        cd "$FRONTEND_DIR" && npm install
+    fi
+    cd "$FRONTEND_DIR" && npm run build
 fi
 
-# ── Start Backend ─────────────────────────────────────────────────────
+# ── Start Backend (systemd-managed with auto-restart) ────────────────
 
 if [[ "$BACKEND_RUNNING" = false ]]; then
-    echo -e "${CYAN}▶  Starting backend (FastAPI on port 8000)...${NC}"
-    cd "$BACKEND_DIR"
-    source venv/bin/activate
-    setsid nohup uvicorn app.main:app --host 127.0.0.1 --port 8000 \
-        > "$LOG_DIR/backend.log" 2>&1 &
-    BACKEND_PID=$!
-    echo "$BACKEND_PID" > "$PIDFILE_BACKEND"
-    
-    # Wait for backend health check to pass
+    echo -e "${CYAN}▶  Starting backend via systemd (auto-restarts on crash)...${NC}"
+    sudo systemctl start vajrakavach-backend
+
     if wait_for_healthcheck "$BACKEND_HEALTH_URL" 20; then
-        echo -e "${GREEN}✔  Backend started (PID $BACKEND_PID)${NC}"
-        echo -e "   API docs: ${CYAN}http://127.0.0.1:8000/api/docs${NC}"
-        echo -e "   Log file: ${CYAN}$LOG_DIR/backend.log${NC}"
+        echo -e "${GREEN}✔  Backend started (systemd: vajrakavach-backend.service)${NC}"
+        echo -e "   Logs: ${CYAN}journalctl -u vajrakavach-backend -f${NC}"
     else
-        echo -e "${RED}✘  Backend failed to start. Check $LOG_DIR/backend.log${NC}"
-        rm -f "$PIDFILE_BACKEND"
+        echo -e "${RED}✘  Backend failed to start. Check: journalctl -u vajrakavach-backend${NC}"
         exit 1
     fi
 fi
 
-# ── Start Frontend ────────────────────────────────────────────────────
+# ── Frontend (served as static files by nginx) ──────────────────────
 
-if [[ "$FRONTEND_RUNNING" = false ]]; then
-    echo -e "${CYAN}▶  Starting frontend (Vite on port 5173)...${NC}"
-    cd "$FRONTEND_DIR"
-    setsid nohup npx vite --host 127.0.0.1 --port 5173 \
-        > "$LOG_DIR/frontend.log" 2>&1 &
-    FRONTEND_PID=$!
-    echo "$FRONTEND_PID" > "$PIDFILE_FRONTEND"
-    
-    # Wait for frontend server to respond
-    if wait_for_healthcheck "$FRONTEND_HEALTH_URL" 20; then
-        echo -e "${GREEN}✔  Frontend started (PID $FRONTEND_PID)${NC}"
-        echo -e "   App URL:  ${CYAN}https://192.168.3.44${NC} (via nginx)"
-        echo -e "   Log file: ${CYAN}$LOG_DIR/frontend.log${NC}"
-    else
-        echo -e "${RED}✘  Frontend failed to start. Check $LOG_DIR/frontend.log${NC}"
-        rm -f "$PIDFILE_FRONTEND"
-        exit 1
-    fi
+if [[ -d "$FRONTEND_DIR/dist" ]]; then
+    echo -e "${GREEN}✔  Frontend built (static files in frontend/dist/)${NC}"
+    echo -e "   Served by nginx at ${CYAN}https://192.168.3.44${NC}"
+else
+    echo -e "${RED}✘  Frontend dist/ not found. Run: cd frontend && npm run build${NC}"
 fi
 
 # ── Summary ───────────────────────────────────────────────────────────
@@ -156,7 +125,7 @@ echo -e "${GREEN}║       🛡️  VajraKavach is running!            ║${NC}"
 echo -e "${GREEN}╠══════════════════════════════════════════════╣${NC}"
 echo -e "${GREEN}║  App URL:   https://192.168.3.44             ║${NC}"
 echo -e "${GREEN}║  Backend:   http://127.0.0.1:8000            ║${NC}"
-echo -e "${GREEN}║  API Docs:  http://127.0.0.1:8000/api/docs   ║${NC}"
+echo -e "${GREEN}║  Frontend:  Static (nginx serves dist/)      ║${NC}"
 echo -e "${GREEN}╠══════════════════════════════════════════════╣${NC}"
 echo -e "${GREEN}║  Stop with: ./stop.sh                       ║${NC}"
 echo -e "${GREEN}║  Logs in:   ./logs/                         ║${NC}"

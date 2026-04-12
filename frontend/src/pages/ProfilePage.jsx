@@ -50,6 +50,7 @@ export default function ProfilePage() {
   const [viewCount, setViewCount] = useState(0);
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
   const [viewers, setViewers] = useState([]);
   const [showViewers, setShowViewers] = useState(true);
   const navigate = useNavigate();
@@ -61,6 +62,7 @@ export default function ProfilePage() {
         const data = res.data || {};
         setFullName(data.full_name || user?.full_name || '');
         setEmail(data.email || user?.email || '');
+        setPhone(data.phone || '');
         setProfile({
           headline: data.headline || '',
           bio: data.bio || '',
@@ -108,8 +110,8 @@ export default function ProfilePage() {
       if (website && !website.match(/^https?:\/\//i)) {
         website = 'https://' + website;
       }
-      // Save name via account endpoint
-      await api.put('/users/me', { full_name: fullName });
+      // Save name and phone via account endpoint
+      await api.put('/users/me', { full_name: fullName, phone: phone || null });
       // Save profile fields
       await api.put('/users/me/profile', {
         headline: profile.headline,
@@ -129,10 +131,23 @@ export default function ProfilePage() {
   };
 
   const saveEducation = async () => {
+    // Filter out completely empty entries
+    const filtered = education.filter(edu =>
+      edu.institution?.trim() || edu.degree?.trim() || edu.field_of_study?.trim() ||
+      edu.start_year || edu.end_year || edu.grade || edu.max_grade
+    );
+    // Validate required fields for non-empty entries
+    for (const edu of filtered) {
+      if (!edu.institution?.trim() || !edu.degree?.trim()) {
+        showMsg('Institution and Degree are required for each education entry', true);
+        return;
+      }
+    }
+    setEducation(filtered);
     setSaving(prev => ({ ...prev, education: true }));
     try {
       // Validate education entries
-      for (const edu of education) {
+      for (const edu of filtered) {
         if (edu.start_year && edu.end_year && Number(edu.start_year) > Number(edu.end_year)) {
           showMsg('Start year cannot be later than end year in education entries', true);
           setSaving(prev => ({ ...prev, education: false }));
@@ -151,7 +166,7 @@ export default function ProfilePage() {
           return;
         }
       }
-      await api.put('/users/me/profile', { education });
+      await api.put('/users/me/profile', { education: filtered });
       showMsg('Education saved!');
     } catch (err) {
       showMsg(err.response?.data?.detail || 'Failed to save education', true);
@@ -161,8 +176,21 @@ export default function ProfilePage() {
   };
 
   const saveExperience = async () => {
+    // Filter out completely empty entries
+    const filtered = experience.filter(exp =>
+      exp.company?.trim() || exp.title?.trim() || exp.location?.trim() ||
+      exp.start_date || exp.end_date || exp.description?.trim()
+    );
+    // Validate required fields for non-empty entries
+    for (const exp of filtered) {
+      if (!exp.company?.trim() || !exp.title?.trim()) {
+        showMsg('Company and Title are required for each experience entry', true);
+        return;
+      }
+    }
+    setExperience(filtered);
     // Validate dates
-    for (const exp of experience) {
+    for (const exp of filtered) {
       if (exp.start_date && exp.end_date && exp.start_date >= exp.end_date) {
         showMsg('Start date must be before end date in experience entries', true);
         return;
@@ -170,7 +198,7 @@ export default function ProfilePage() {
     }
     setSaving(prev => ({ ...prev, experience: true }));
     try {
-      await api.put('/users/me/profile', { experience });
+      await api.put('/users/me/profile', { experience: filtered });
       showMsg('Experience saved!');
     } catch (err) {
       showMsg(err.response?.data?.detail || 'Failed to save experience', true);
@@ -244,6 +272,13 @@ export default function ProfilePage() {
                 className={inputClass + " bg-gray-50 text-gray-500 cursor-not-allowed"} />
               <p className="text-xs text-gray-400 mt-1">Email cannot be changed</p>
             </div>
+            <div>
+              <label className="text-sm font-medium text-gray-700 mb-1 block">Phone</label>
+              <input type="tel" value={phone}
+                onChange={(e) => setPhone(e.target.value.slice(0, 20))}
+                className={inputClass} placeholder="+911234567890" maxLength={20} />
+              <p className="text-xs text-gray-400 mt-1">Include country code (e.g. +91)</p>
+            </div>
           </div>
 
           <div>
@@ -306,6 +341,20 @@ export default function ProfilePage() {
               <div className="mb-2 flex items-center gap-3">
                 <img src={profile.profile_picture_url} alt="Profile" className="w-16 h-16 rounded-full object-cover border-2 border-gray-200" />
                 <span className="text-xs text-green-600">Current photo</span>
+                <button
+                  onClick={async () => {
+                    try {
+                      await api.delete('/users/me/profile-picture');
+                      setProfile(p => ({ ...p, profile_picture_url: '' }));
+                      showMsg('Profile picture deleted');
+                    } catch (err) {
+                      showMsg(err.response?.data?.detail || 'Failed to delete picture', true);
+                    }
+                  }}
+                  className="flex items-center gap-1 px-2 py-1 text-xs text-red-600 border border-red-200 rounded-lg hover:bg-red-50 transition"
+                >
+                  <Trash2 className="h-3 w-3" /> Remove
+                </button>
               </div>
             )}
             <label className="flex items-center gap-2 px-4 py-2.5 border border-gray-300 rounded-lg cursor-pointer hover:bg-gray-50 transition text-sm text-gray-600">
@@ -319,7 +368,8 @@ export default function ProfilePage() {
                 formData.append('file', file);
                 try {
                   const res = await api.post('/users/me/profile-picture', formData, { headers: { 'Content-Type': 'multipart/form-data' } });
-                  setProfile(p => ({ ...p, profile_picture_url: res.data?.url || res.data?.profile_picture_url || '' }));
+                  const picUrl = res.data?.url || res.data?.profile_picture_url || '';
+                  setProfile(p => ({ ...p, profile_picture_url: picUrl ? `${picUrl}?t=${Date.now()}` : '' }));
                   showMsg('Profile picture uploaded!');
                 } catch (err) {
                   showMsg(err.response?.data?.detail || 'Upload failed', true);

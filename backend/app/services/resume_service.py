@@ -16,7 +16,7 @@ ALLOWED_MIME_TYPES = {
     "application/pdf",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",  # docx
 }
-MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
+MAX_FILE_SIZE = 5 * 1024 * 1024  # 5 MB
 
 
 async def save_encrypted_resume(
@@ -32,7 +32,7 @@ async def save_encrypted_resume(
     content = await file.read()
 
     if len(content) > MAX_FILE_SIZE:
-        raise ValueError("File exceeds maximum size of 10 MB")
+        raise ValueError("File exceeds maximum size of 5 MB")
 
     if file.content_type not in ALLOWED_MIME_TYPES:
         raise ValueError(f"Invalid file type: {file.content_type}. Only PDF and DOCX are allowed.")

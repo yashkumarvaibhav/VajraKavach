@@ -19,6 +19,7 @@ import AdminDashboard from './pages/AdminDashboard';
 import SecurityPage from './pages/SecurityPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import ViewProfilePage from './pages/ViewProfilePage';
+import RateLimitToast from './components/RateLimitToast';
 
 function ProtectedRoute({ children, requiredRole, allowedRoles }) {
   const { user, loading, totpRequired } = useAuth();
@@ -48,6 +49,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      <RateLimitToast />
       {user && <Navbar />}
       {user && <GreetingBar />}
       {user && <KeyImportPrompt />}

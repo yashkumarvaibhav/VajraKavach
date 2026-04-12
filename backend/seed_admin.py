@@ -18,9 +18,9 @@ from app.services.auth_service import hash_password
 from app.services.totp_service import generate_totp_secret, get_totp_uri, generate_qr_code_base64
 
 # ─── Seed Admin Credentials ──────────────────────────────────────────
-ADMIN_EMAIL = "vajrakavach@iiitd.ac.in"
-ADMIN_PASSWORD = "Admin@12345"
-ADMIN_NAME = "VajraKavach Admin"
+ADMIN_EMAIL = ""
+ADMIN_PASSWORD = ""
+ADMIN_NAME = ""
 
 
 async def seed():

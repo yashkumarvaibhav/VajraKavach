@@ -1,0 +1,47 @@
+\contentsline {section}{\numberline {1}Executive Summary}{3}{section.1}%
+\contentsline {section}{\numberline {2}Tools and Methodology}{3}{section.2}%
+\contentsline {section}{\numberline {3}Port Scan Results (nmap)}{3}{section.3}%
+\contentsline {section}{\numberline {4}TLS/SSL Audit (testssl.sh)}{4}{section.4}%
+\contentsline {subsection}{\numberline {4.1}Protocol Support}{4}{subsection.4.1}%
+\contentsline {subsection}{\numberline {4.2}Cipher Suites (AEAD-Only)}{5}{subsection.4.2}%
+\contentsline {subsection}{\numberline {4.3}Known TLS Vulnerability Checks}{5}{subsection.4.3}%
+\contentsline {subsection}{\numberline {4.4}Certificate Details}{6}{subsection.4.4}%
+\contentsline {section}{\numberline {5}Web Server Scan (Nikto)}{6}{section.5}%
+\contentsline {section}{\numberline {6}SQL Injection Testing (sqlmap)}{6}{section.6}%
+\contentsline {section}{\numberline {7}Comprehensive Web Scan (wapiti)}{7}{section.7}%
+\contentsline {section}{\numberline {8}Endpoint Access Control Audit}{7}{section.8}%
+\contentsline {subsection}{\numberline {8.1}Sensitive Path Blocking}{8}{subsection.8.1}%
+\contentsline {subsection}{\numberline {8.2}API Authentication Enforcement}{8}{subsection.8.2}%
+\contentsline {section}{\numberline {9}Security Headers Audit}{9}{section.9}%
+\contentsline {section}{\numberline {10}Re-Audit: Nikto Re-Scan (April 7, 2026)}{9}{section.10}%
+\contentsline {section}{\numberline {11}WebSocket Security Audit}{9}{section.11}%
+\contentsline {subsection}{\numberline {11.1}Authentication}{10}{subsection.11.1}%
+\contentsline {subsection}{\numberline {11.2}Cross-Site WebSocket Hijacking (CSWSH)}{10}{subsection.11.2}%
+\contentsline {subsection}{\numberline {11.3}WebSocket Configuration (nginx)}{10}{subsection.11.3}%
+\contentsline {section}{\numberline {12}TOTP Lockout Mechanism Audit}{10}{section.12}%
+\contentsline {section}{\numberline {13}API Rate Limiting \& Resilience}{11}{section.13}%
+\contentsline {section}{\numberline {14}Re-Audit Confirmation: Comprehensive Testing (April 7, 2026)}{11}{section.14}%
+\contentsline {subsection}{\numberline {14.1}nmap Re-Scan}{11}{subsection.14.1}%
+\contentsline {subsection}{\numberline {14.2}nmap Vulnerability Scripts}{11}{subsection.14.2}%
+\contentsline {subsection}{\numberline {14.3}testssl.sh Re-Scan}{12}{subsection.14.3}%
+\contentsline {subsection}{\numberline {14.4}sqlmap Re-Scan}{12}{subsection.14.4}%
+\contentsline {subsection}{\numberline {14.5}wapiti Re-Scan}{12}{subsection.14.5}%
+\contentsline {subsection}{\numberline {14.6}gobuster Directory Enumeration}{12}{subsection.14.6}%
+\contentsline {subsection}{\numberline {14.7}HTTP Method Testing}{13}{subsection.14.7}%
+\contentsline {subsection}{\numberline {14.8}CORS Validation}{13}{subsection.14.8}%
+\contentsline {subsection}{\numberline {14.9}Cookie Security Flags}{13}{subsection.14.9}%
+\contentsline {subsection}{\numberline {14.10}Authentication Bypass Testing}{13}{subsection.14.10}%
+\contentsline {subsection}{\numberline {14.11}Injection \& Manipulation Tests}{14}{subsection.14.11}%
+\contentsline {subsection}{\numberline {14.12}Dependency Audit}{14}{subsection.14.12}%
+\contentsline {subsection}{\numberline {14.13}Debug Endpoint Exposure}{14}{subsection.14.13}%
+\contentsline {section}{\numberline {15}Fixes Applied During Audit}{15}{section.15}%
+\contentsline {section}{\numberline {16}Overall Assessment}{16}{section.16}%
+\contentsline {section}{\numberline {17}Service Resilience}{16}{section.17}%
+\contentsline {subsection}{\numberline {17.1}Systemd Watchdog}{16}{subsection.17.1}%
+\contentsline {subsection}{\numberline {17.2}Health Check Timer}{17}{subsection.17.2}%
+\contentsline {subsection}{\numberline {17.3}Kernel Panic Auto-Reboot}{17}{subsection.17.3}%
+\contentsline {section}{\numberline {18}Attack Mitigation, Tolerance, and Recovery}{17}{section.18}%
+\contentsline {subsection}{\numberline {18.1}Attack Mitigation}{18}{subsection.18.1}%
+\contentsline {subsection}{\numberline {18.2}Attack Tolerance}{19}{subsection.18.2}%
+\contentsline {subsection}{\numberline {18.3}Attack Recovery}{19}{subsection.18.3}%
+\contentsline {subsection}{\numberline {18.4}Resilience Summary}{20}{subsection.18.4}%

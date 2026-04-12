@@ -1,0 +1,89 @@
+\contentsline {section}{\numberline {1}Introduction}{4}{section.1}%
+\contentsline {subsection}{\numberline {1.1}User Roles}{4}{subsection.1.1}%
+\contentsline {section}{\numberline {2}Getting Started}{5}{section.2}%
+\contentsline {subsection}{\numberline {2.1}System Requirements}{5}{subsection.2.1}%
+\contentsline {subsection}{\numberline {2.2}Certificate Installation}{5}{subsection.2.2}%
+\contentsline {subsubsection}{\numberline {2.2.1}Obtaining the Certificate}{5}{subsubsection.2.2.1}%
+\contentsline {subsubsection}{\numberline {2.2.2}Installing on Linux (Ubuntu/Debian)}{6}{subsubsection.2.2.2}%
+\contentsline {subsubsection}{\numberline {2.2.3}Installing on Windows}{7}{subsubsection.2.2.3}%
+\contentsline {subsubsection}{\numberline {2.2.4}Installing on macOS}{7}{subsubsection.2.2.4}%
+\contentsline {subsubsection}{\numberline {2.2.5}Installing on Android}{7}{subsubsection.2.2.5}%
+\contentsline {subsubsection}{\numberline {2.2.6}Installing on iOS / iPadOS}{8}{subsubsection.2.2.6}%
+\contentsline {subsection}{\numberline {2.3}Accessing the Platform}{8}{subsection.2.3}%
+\contentsline {section}{\numberline {3}Registration \& Account Setup}{9}{section.3}%
+\contentsline {subsection}{\numberline {3.1}Creating an Account}{9}{subsection.3.1}%
+\contentsline {subsection}{\numberline {3.2}Setting Up TOTP (Two-Factor Authentication)}{10}{subsection.3.2}%
+\contentsline {subsection}{\numberline {3.3}Using the Virtual Keyboard}{11}{subsection.3.3}%
+\contentsline {section}{\numberline {4}Login \& Authentication}{11}{section.4}%
+\contentsline {subsection}{\numberline {4.1}Logging In}{11}{subsection.4.1}%
+\contentsline {subsection}{\numberline {4.2}TOTP Verification}{12}{subsection.4.2}%
+\contentsline {subsection}{\numberline {4.3}Key Import Prompt}{13}{subsection.4.3}%
+\contentsline {subsection}{\numberline {4.4}Forgot Password}{14}{subsection.4.4}%
+\contentsline {section}{\numberline {5}Dashboard}{14}{section.5}%
+\contentsline {subsection}{\numberline {5.1}User Dashboard}{15}{subsection.5.1}%
+\contentsline {subsection}{\numberline {5.2}Recruiter Dashboard}{15}{subsection.5.2}%
+\contentsline {subsection}{\numberline {5.3}Admin Dashboard}{16}{subsection.5.3}%
+\contentsline {subsection}{\numberline {5.4}Announcements}{17}{subsection.5.4}%
+\contentsline {subsection}{\numberline {5.5}Navigation Bar}{17}{subsection.5.5}%
+\contentsline {subsection}{\numberline {5.6}Greeting Bar}{17}{subsection.5.6}%
+\contentsline {section}{\numberline {6}Profile Management}{18}{section.6}%
+\contentsline {subsection}{\numberline {6.1}Viewing Your Profile}{18}{subsection.6.1}%
+\contentsline {subsection}{\numberline {6.2}Editing Your Profile}{19}{subsection.6.2}%
+\contentsline {subsubsection}{\numberline {6.2.1}Adding Education}{20}{subsubsection.6.2.1}%
+\contentsline {subsubsection}{\numberline {6.2.2}Adding Experience}{21}{subsubsection.6.2.2}%
+\contentsline {subsection}{\numberline {6.3}Privacy Settings}{21}{subsection.6.3}%
+\contentsline {subsection}{\numberline {6.4}Profile Picture}{22}{subsection.6.4}%
+\contentsline {subsection}{\numberline {6.5}Profile Viewers}{22}{subsection.6.5}%
+\contentsline {section}{\numberline {7}Encryption Key Management}{23}{section.7}%
+\contentsline {subsection}{\numberline {7.1}How Keys are Managed}{23}{subsection.7.1}%
+\contentsline {subsection}{\numberline {7.2}Exporting Your Key (Backup)}{23}{subsection.7.2}%
+\contentsline {subsection}{\numberline {7.3}Importing Your Key (New Device)}{24}{subsection.7.3}%
+\contentsline {section}{\numberline {8}Resume Management}{25}{section.8}%
+\contentsline {subsection}{\numberline {8.1}Uploading a Resume}{25}{subsection.8.1}%
+\contentsline {subsection}{\numberline {8.2}Downloading Your Resume}{26}{subsection.8.2}%
+\contentsline {subsection}{\numberline {8.3}Updating Your Resume}{27}{subsection.8.3}%
+\contentsline {subsection}{\numberline {8.4}Deleting Your Resume}{27}{subsection.8.4}%
+\contentsline {section}{\numberline {9}Jobs}{27}{section.9}%
+\contentsline {subsection}{\numberline {9.1}Browsing Jobs (All Roles)}{27}{subsection.9.1}%
+\contentsline {subsection}{\numberline {9.2}Applying for a Job (User)}{28}{subsection.9.2}%
+\contentsline {subsection}{\numberline {9.3}Posting a Job (Recruiter)}{29}{subsection.9.3}%
+\contentsline {section}{\numberline {10}Applications}{30}{section.10}%
+\contentsline {subsection}{\numberline {10.1}Tracking Your Applications (User)}{30}{subsection.10.1}%
+\contentsline {subsection}{\numberline {10.2}Managing Applicants (Recruiter)}{31}{subsection.10.2}%
+\contentsline {section}{\numberline {11}Companies}{32}{section.11}%
+\contentsline {subsection}{\numberline {11.1}Creating a Company Page (Recruiter)}{32}{subsection.11.1}%
+\contentsline {subsection}{\numberline {11.2}Browsing Companies (All Roles)}{33}{subsection.11.2}%
+\contentsline {subsection}{\numberline {11.3}Managing Job Postings (Recruiter)}{34}{subsection.11.3}%
+\contentsline {section}{\numberline {12}Connections}{35}{section.12}%
+\contentsline {subsection}{\numberline {12.1}Finding People}{35}{subsection.12.1}%
+\contentsline {subsection}{\numberline {12.2}Managing Connection Requests}{36}{subsection.12.2}%
+\contentsline {subsection}{\numberline {12.3}Connection Graph}{36}{subsection.12.3}%
+\contentsline {section}{\numberline {13}Messaging (End-to-End Encrypted)}{37}{section.13}%
+\contentsline {subsection}{\numberline {13.1}Overview}{37}{subsection.13.1}%
+\contentsline {subsection}{\numberline {13.2}Sending a Direct Message}{37}{subsection.13.2}%
+\contentsline {subsection}{\numberline {13.3}Group Messages}{38}{subsection.13.3}%
+\contentsline {subsubsection}{\numberline {13.3.1}Group Management}{38}{subsubsection.13.3.1}%
+\contentsline {subsection}{\numberline {13.4}Message Encryption Indicators}{39}{subsection.13.4}%
+\contentsline {subsection}{\numberline {13.5}Deleting Messages}{40}{subsection.13.5}%
+\contentsline {subsection}{\numberline {13.6}Messaging from Other Pages}{40}{subsection.13.6}%
+\contentsline {section}{\numberline {14}Viewing Other Users' Profiles}{40}{section.14}%
+\contentsline {section}{\numberline {15}Security Settings}{41}{section.15}%
+\contentsline {subsection}{\numberline {15.1}Changing Your Password}{41}{subsection.15.1}%
+\contentsline {subsection}{\numberline {15.2}Deleting Your Account}{42}{subsection.15.2}%
+\contentsline {subsection}{\numberline {15.3}Account Information}{42}{subsection.15.3}%
+\contentsline {section}{\numberline {16}Admin Dashboard}{43}{section.16}%
+\contentsline {subsection}{\numberline {16.1}TOTP Verification Gate}{43}{subsection.16.1}%
+\contentsline {subsection}{\numberline {16.2}Overview Tab}{44}{subsection.16.2}%
+\contentsline {subsection}{\numberline {16.3}User Management}{45}{subsection.16.3}%
+\contentsline {subsection}{\numberline {16.4}Job Moderation}{46}{subsection.16.4}%
+\contentsline {subsection}{\numberline {16.5}Resume Overview}{47}{subsection.16.5}%
+\contentsline {subsection}{\numberline {16.6}Announcements}{47}{subsection.16.6}%
+\contentsline {subsection}{\numberline {16.7}User Reports}{47}{subsection.16.7}%
+\contentsline {subsection}{\numberline {16.8}Audit Logs}{48}{subsection.16.8}%
+\contentsline {subsection}{\numberline {16.9}Blockchain Verification}{49}{subsection.16.9}%
+\contentsline {section}{\numberline {17}Reporting Users}{50}{section.17}%
+\contentsline {section}{\numberline {18}Troubleshooting}{51}{section.18}%
+\contentsline {section}{\numberline {19}Security Best Practices}{52}{section.19}%
+\contentsline {section}{\numberline {A}Quick Reference Card}{52}{appendix.A}%
+\contentsline {section}{\numberline {B}Keyboard Shortcuts}{53}{appendix.B}%
+\contentsline {section}{\numberline {C}Glossary}{53}{appendix.C}%

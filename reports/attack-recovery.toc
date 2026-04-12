@@ -1,0 +1,17 @@
+\contentsline {section}{\numberline {1}Executive Summary}{3}{section.1}%
+\contentsline {section}{\numberline {2}Automated Service Restoration}{3}{section.2}%
+\contentsline {subsection}{\numberline {2.1}Systemd Auto-Restart}{3}{subsection.2.1}%
+\contentsline {subsection}{\numberline {2.2}Systemd Watchdog}{4}{subsection.2.2}%
+\contentsline {subsection}{\numberline {2.3}Health Check Timer}{5}{subsection.2.3}%
+\contentsline {subsection}{\numberline {2.4}Kernel Panic Auto-Reboot}{6}{subsection.2.4}%
+\contentsline {subsection}{\numberline {2.5}Service Dependency Chain}{6}{subsection.2.5}%
+\contentsline {section}{\numberline {3}Security State Persistence}{7}{section.3}%
+\contentsline {subsection}{\numberline {3.1}Token Revocation Persistence}{7}{subsection.3.1}%
+\contentsline {subsection}{\numberline {3.2}TOTP Lockout State Persistence}{7}{subsection.3.2}%
+\contentsline {section}{\numberline {4}Forensic Evidence \& Integrity}{8}{section.4}%
+\contentsline {subsection}{\numberline {4.1}SHA-256 Hash-Chained Audit Logs}{8}{subsection.4.1}%
+\contentsline {subsection}{\numberline {4.2}Blockchain Integrity Layer}{8}{subsection.4.2}%
+\contentsline {subsection}{\numberline {4.3}File Integrity Verification}{9}{subsection.4.3}%
+\contentsline {section}{\numberline {5}Recovery Architecture Diagram}{9}{section.5}%
+\contentsline {section}{\numberline {6}Recovery Summary}{9}{section.6}%
+\contentsline {subsection}{\numberline {6.1}Recovery Guarantee}{10}{subsection.6.1}%

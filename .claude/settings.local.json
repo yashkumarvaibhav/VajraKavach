@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(xargs ls:*)",
+      "Bash(find /home/iiitd/Desktop/vajrakavach-v01 -type f -name *milestone* -o -name *Milestone*)",
+      "Bash(find /home/iiitd/Desktop/vajrakavach-v01 -type d -name *report* -o -name *doc* -o -name *docs*)",
+      "Bash(sudo -S cat /etc/nginx/nginx.conf)",
+      "Bash(sudo -S grep -r \"include\" /etc/nginx/nginx.conf)",
+      "Bash(sudo -S cp /home/iiitd/Desktop/vajrakavach-v01/nginx/nginx.conf /etc/nginx/sites-available/default)",
+      "Bash(sudo -S nginx -t)",
+      "Bash(sudo -S nginx -s reload)",
+      "Bash(curl -sk https://192.168.3.44/)",
+      "Bash(sudo -S tail -5 /var/log/nginx/error.log)"
+    ]
+  }
+}

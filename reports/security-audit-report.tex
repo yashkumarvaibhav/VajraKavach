@@ -1,0 +1,969 @@
+\documentclass[12pt,a4paper]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{booktabs}
+\usepackage{xcolor}
+\usepackage{amssymb}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{listings}
+\usepackage{float}
+\usepackage{tabularx}
+\usepackage{longtable}
+\usepackage{multirow}
+
+\definecolor{primary}{RGB}{30,64,175}
+\definecolor{codebg}{RGB}{245,245,250}
+\definecolor{codetext}{RGB}{40,40,40}
+\definecolor{success}{RGB}{22,163,74}
+\definecolor{warning}{RGB}{202,138,4}
+\definecolor{danger}{RGB}{220,38,38}
+\definecolor{fixed}{RGB}{37,99,235}
+
+\lstset{
+  backgroundcolor=\color{codebg},
+  basicstyle=\ttfamily\small\color{codetext},
+  breaklines=true,
+  frame=single,
+  rulecolor=\color{gray!30},
+  xleftmargin=0.5cm,
+  framexleftmargin=0.5cm,
+  numbers=none,
+  showstringspaces=false,
+}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=primary,
+  urlcolor=primary,
+  citecolor=primary,
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small CSE 345/545 --- Foundations to Computer Security}
+\fancyhead[R]{\small Security Audit Report}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+\titleformat{\section}{\large\bfseries\color{primary}}{}{0em}{}
+\titleformat{\subsection}{\normalsize\bfseries\color{primary!80!black}}{}{0em}{}
+\titleformat{\subsubsection}{\small\bfseries\color{primary!60!black}}{}{0em}{}
+
+\newcommand{\pass}{\textcolor{success}{\checkmark}}
+\newcommand{\fail}{\textcolor{danger}{\texttimes}}
+\newcommand{\fixd}{\textcolor{fixed}{\textbf{Fixed}}}
+
+\begin{document}
+
+% ============= TITLE PAGE =============
+\begin{titlepage}
+\centering
+\vspace*{2cm}
+{\Huge\bfseries\color{primary} VajraKavach\par}
+\vspace{0.5cm}
+{\Large Secure Job Search \& Professional Networking Platform\par}
+\vspace{2cm}
+{\LARGE\bfseries Security Audit Report\par}
+\vspace{0.3cm}
+{\large Multi-Tool Black-Box Penetration Test --- Revision 3\par}
+\vspace{0.3cm}
+{\large CSE 345/545: Foundations to Computer Security\par}
+\vspace{2cm}
+
+\begin{tabular}{ll}
+\toprule
+\textbf{Initial Audit} & April 6, 2026 \\
+\textbf{Re-Audit Date} & April 7, 2026 \\
+\textbf{Target} & \texttt{https://192.168.3.44} \\
+\textbf{Scope} & Full external attack surface (incl.\ WebSocket) \\
+\textbf{Methodology} & Black-box automated + manual code review \\
+\bottomrule
+\end{tabular}
+
+\vspace{1.5cm}
+
+\begin{tabular}{ll}
+\toprule
+\textbf{Team Members} & \textbf{Roll Number} \\
+\midrule
+Yash Kumar Vaibhav & MT25091 \\
+Aayush Gupta & MT25008 \\
+Ayush Jain & MT25066 \\
+Ayush Kumar & 2020290 \\
+\bottomrule
+\end{tabular}
+
+\vspace{2cm}
+{\large Indraprastha Institute of Information Technology, Delhi\par}
+\vfill
+\end{titlepage}
+
+\tableofcontents
+\newpage
+
+% ================================================================
+\section{Executive Summary}
+% ================================================================
+
+A comprehensive black-box security audit was first conducted on April 6, 2026 against VajraKavach (\texttt{https://192.168.3.44}).  Following significant feature additions---real-time WebSocket messaging, progressive IP-based TOTP lockout, and API retry logic---a full re-audit was performed on April 7, 2026 using eight tools plus manual code review.
+
+\begin{center}
+\setlength{\fboxsep}{12pt}
+\colorbox{codebg}{%
+\begin{minipage}{0.85\textwidth}
+\centering
+\textbf{\large Final Assessment: \textcolor{success}{STRONG}}\\[6pt]
+\textbf{0} Critical \quad \textbf{0} High \quad \textbf{0} Medium \quad \textbf{0} Low\\[4pt]
+All findings discovered during both audits were \textbf{fixed immediately}.\\
+14 known TLS/SSL CVEs tested --- all clean.\\
+Zero injection vectors across all categories.\\
+WebSocket endpoint secured against CSWSH.\\
+All HTTP methods except GET/POST blocked (405).\\
+CORS, cookie flags, auth bypass, and dependency audits all clean.
+\end{minipage}%
+}
+\end{center}
+
+% ================================================================
+\section{Tools and Methodology}
+% ================================================================
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{llX}
+\toprule
+\textbf{Tool} & \textbf{Version} & \textbf{Purpose} \\
+\midrule
+nmap & 7.80 & Port scanning, service detection, SSL cipher enumeration, vulnerability scripts \\
+testssl.sh & 3.2 & TLS/SSL configuration audit (protocols, ciphers, 14+ CVE checks) \\
+Nikto & 2.6.0 & Web server misconfiguration and information leakage scanner \\
+sqlmap & 1.6.4 & Automated SQL injection detection and exploitation \\
+wapiti & 3.0.4 & Comprehensive web vulnerability scanner (SQLi, XSS, CSRF, SSRF, XXE, RCE, LFI) \\
+gobuster & 2.0.1 & Directory/path brute-force enumeration \\
+npm audit & --- & Frontend dependency vulnerability scanner \\
+curl & 7.81 & Manual HTTP method, CORS, cookie, injection, and auth bypass probing \\
+\bottomrule
+\end{tabularx}
+\caption{Security testing toolkit (8 tools)}
+\end{table}
+
+\textbf{Approach:} Each tool was run independently against the production deployment. Authenticated tests used a valid JWT session cookie. Rate limiting was observed and accounted for during testing. The re-audit was conducted after implementing WebSocket messaging, IP-based TOTP lockout, and CSWSH protection.
+
+% ================================================================
+\section{Port Scan Results (nmap)}
+% ================================================================
+
+\begin{lstlisting}
+$ sudo nmap -sV -sC -p 80,443,8000,8080,3000,5000,5432,22 192.168.3.44
+
+PORT     STATE   SERVICE    VERSION
+22/tcp   open    ssh        OpenSSH 8.9p1 Ubuntu
+80/tcp   open    http       nginx (returns 444 - connection drop)
+443/tcp  open    ssl/http   nginx (TLS 1.2 + 1.3)
+3000/tcp closed  -
+5000/tcp closed  -
+5432/tcp closed  postgresql (not externally accessible)
+8000/tcp closed  http-alt   (backend bound to 127.0.0.1 only)
+8080/tcp closed  -
+\end{lstlisting}
+
+\textbf{Assessment:} Only essential ports exposed. Backend (8000) and database (5432) are properly isolated on localhost. HTTP port 80 drops connections with status 444 (no redirect --- prevents credential leakage during downgrade attacks).
+
+% ================================================================
+\section{TLS/SSL Audit (testssl.sh)}
+% ================================================================
+
+\subsection{Protocol Support}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lll}
+\toprule
+\textbf{Protocol} & \textbf{Status} & \textbf{Assessment} \\
+\midrule
+SSLv2 & Not offered & \pass\ Secure \\
+SSLv3 & Not offered & \pass\ Secure (POODLE mitigated) \\
+TLS 1.0 & Not offered & \pass\ Secure (BEAST mitigated) \\
+TLS 1.1 & Not offered & \pass\ Secure \\
+TLS 1.2 & Offered & \pass\ Supported \\
+TLS 1.3 & Offered & \pass\ Modern standard \\
+\bottomrule
+\end{tabular}
+\caption{TLS protocol support --- only TLS 1.2 and 1.3 offered}
+\end{table}
+
+\subsection{Cipher Suites (AEAD-Only)}
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{Xlllc}
+\toprule
+\textbf{Cipher Suite} & \textbf{Key Exchange} & \textbf{Encryption} & \textbf{Bits} & \textbf{Grade} \\
+\midrule
+\multicolumn{5}{l}{\textbf{TLS 1.3}} \\
+\midrule
+TLS\_AES\_256\_GCM\_SHA384 & ECDH x25519 & AESGCM & 256 & A \\
+TLS\_CHACHA20\_POLY1305\_SHA256 & ECDH x25519 & ChaCha20 & 256 & A \\
+TLS\_AES\_128\_GCM\_SHA256 & ECDH x25519 & AESGCM & 128 & A \\
+\midrule
+\multicolumn{5}{l}{\textbf{TLS 1.2}} \\
+\midrule
+ECDHE-RSA-AES256-GCM-SHA384 & ECDH x25519 & AESGCM & 256 & A \\
+ECDHE-RSA-AES128-GCM-SHA256 & ECDH x25519 & AESGCM & 128 & A \\
+ECDHE-RSA-CHACHA20-POLY1305 & ECDH x25519 & ChaCha20 & 256 & A \\
+\bottomrule
+\end{tabularx}
+\caption{Offered cipher suites --- all AEAD, all Grade A, no CBC ciphers}
+\end{table}
+
+\textbf{Key points:}
+\begin{itemize}
+  \item All ciphers use \textbf{Authenticated Encryption with Associated Data} (AEAD).
+  \item \textbf{No CBC ciphers} offered --- LUCKY13 (CVE-2013-0169) eliminated.
+  \item \textbf{Forward Secrecy} via ECDHE with X25519 on all cipher suites.
+  \item Server cipher order enforced (\texttt{ssl\_prefer\_server\_ciphers on}).
+\end{itemize}
+
+\subsection{Known TLS Vulnerability Checks}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{llc}
+\toprule
+\textbf{Vulnerability} & \textbf{CVE} & \textbf{Status} \\
+\midrule
+Heartbleed & CVE-2014-0160 & \pass \\
+CCS Injection & CVE-2014-0224 & \pass \\
+Ticketbleed & CVE-2016-9244 & \pass \\
+ROBOT & --- & \pass \\
+CRIME & CVE-2012-4929 & \pass \\
+BREACH & CVE-2013-3587 & \pass\ (gzip disabled) \\
+POODLE & CVE-2014-3566 & \pass\ (no SSLv3) \\
+SWEET32 & CVE-2016-2183 & \pass \\
+FREAK & CVE-2015-0204 & \pass \\
+DROWN & CVE-2016-0800 & \pass \\
+LOGJAM & CVE-2015-4000 & \pass \\
+BEAST & CVE-2011-3389 & \pass\ (no TLS 1.0) \\
+LUCKY13 & CVE-2013-0169 & \pass\ (no CBC ciphers) \\
+RC4 & CVE-2013-2566 & \pass\ (no RC4) \\
+\bottomrule
+\end{tabular}
+\caption{All 14 known TLS/SSL CVEs --- not vulnerable}
+\end{table}
+
+\subsection{Certificate Details}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{ll}
+\toprule
+\textbf{Property} & \textbf{Value} \\
+\midrule
+Algorithm & SHA256 with RSA (2048-bit key) \\
+SAN & DNS:localhost, IP:192.168.3.44, IP:127.0.0.1 \\
+Issuer & mkcert development CA \\
+Forward Secrecy & Yes (ECDHE with X25519) \\
+HSTS & 365 days with includeSubDomains \\
+\bottomrule
+\end{tabular}
+\caption{TLS certificate properties}
+\end{table}
+
+% ================================================================
+\section{Web Server Scan (Nikto)}
+% ================================================================
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{lllX}
+\toprule
+\textbf{Finding} & \textbf{Severity} & \textbf{Status} & \textbf{Details} \\
+\midrule
+BREACH (gzip) & Medium & \fixd & Added \texttt{gzip off;} in nginx server block \\
+X-Request-ID leak & Low & \fixd & Removed from response headers; \texttt{proxy\_hide\_header} in nginx \\
+Cert SAN mismatch & Info & \textcolor{success}{FP} & Cert has IP SAN; Nikto doesn't parse IP SANs \\
+X-Content-Type-Options & Info & \textcolor{success}{FP} & Header present (verified via curl) \\
+JAMonAdmin.jsp & Info & \textcolor{success}{FP} & React SPA returns 200 for all unknown paths \\
+\bottomrule
+\end{tabularx}
+\caption{Nikto findings --- 2 real issues fixed, 3 false positives identified}
+\end{table}
+
+FP = False Positive
+
+% ================================================================
+\section{SQL Injection Testing (sqlmap)}
+% ================================================================
+
+Tested with authenticated session against all search/filter endpoints:
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{XXc}
+\toprule
+\textbf{Endpoint} & \textbf{Parameters Tested} & \textbf{Result} \\
+\midrule
+\texttt{/api/jobs/?keyword=test} & keyword & \pass\ Not injectable \\
+\texttt{/api/users/search?q=test} & q & \pass\ Not injectable \\
+\texttt{/api/companies/?q=test} & q & \pass\ Not injectable \\
+\texttt{/api/jobs/?keyword=test\&location=delhi} & keyword, location & \pass\ Not injectable \\
+\bottomrule
+\end{tabularx}
+\caption{SQL injection test results --- all endpoints clean}
+\end{table}
+
+\textbf{Why VajraKavach is not injectable:}
+\begin{itemize}
+  \item All queries use \textbf{SQLAlchemy ORM} with parameterized queries --- no raw SQL.
+  \item \texttt{escape\_like()} function used for all LIKE clauses.
+  \item All inputs have \textbf{Pydantic max\_length constraints} at the schema level.
+  \item sqlmap also detected \textbf{rate limiting} (identified as WAF protection).
+\end{itemize}
+
+% ================================================================
+\section{Comprehensive Web Scan (wapiti)}
+% ================================================================
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lcc}
+\toprule
+\textbf{Vulnerability Category} & \textbf{Findings} & \textbf{Status} \\
+\midrule
+SQL Injection & 0 & \pass \\
+Blind SQL Injection & 0 & \pass \\
+Cross Site Scripting (XSS) & 0 & \pass \\
+Permanent XSS (Stored) & 0 & \pass \\
+Cross Site Request Forgery (CSRF) & 0 & \pass \\
+Server Side Request Forgery (SSRF) & 0 & \pass \\
+XML External Entity (XXE) & 0 & \pass \\
+Command Execution (RCE) & 0 & \pass \\
+Path Traversal (LFI) & 0 & \pass \\
+Open Redirect & 0 & \pass \\
+CRLF Injection & 0 & \pass \\
+Backup Files & 0 & \pass \\
+Weak Credentials & 0 & \pass \\
+Htaccess Bypass & 0 & \pass \\
+HttpOnly Cookie Flag & 0 & \pass \\
+Secure Cookie Flag & 0 & \pass \\
+Internal Server Error & 0 & \pass \\
+\midrule
+CSP Configuration & 1 & \fixd \\
+\bottomrule
+\end{tabular}
+\caption{Wapiti scan results --- 17 categories clean, 1 finding fixed}
+\end{table}
+
+The single CSP finding (\texttt{object-src} not set) was fixed by adding \texttt{object-src 'none'} to all Content-Security-Policy headers.
+
+% ================================================================
+\section{Endpoint Access Control Audit}
+% ================================================================
+
+\subsection{Sensitive Path Blocking}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lllc}
+\toprule
+\textbf{Path} & \textbf{Expected} & \textbf{Actual} & \textbf{Status} \\
+\midrule
+\texttt{/.env} & 404 & 404 & \pass \\
+\texttt{/.git} & 404 & 404 & \pass \\
+\texttt{/.git/config} & 404 & 404 & \pass \\
+\texttt{/wp-admin} & 404 & 404 & \pass \\
+\texttt{/phpinfo.php} & 404 & 404 & \pass \\
+\texttt{/server-status} & 404 & 404 & \pass \\
+\texttt{/actuator} & 404 & 404 & \pass \\
+\texttt{/console} & 404 & 404 & \pass \\
+\texttt{/debug} & 404 & 404 & \pass \\
+\texttt{/api/docs} & 404 & 404 & \pass \\
+\texttt{/api/redoc} & 404 & 404 & \pass \\
+\texttt{/openapi.json} & 404 & 404 & \pass \\
+\bottomrule
+\end{tabular}
+\caption{All sensitive paths return 404 --- no information leakage}
+\end{table}
+
+\subsection{API Authentication Enforcement}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{llc}
+\toprule
+\textbf{Endpoint} & \textbf{Without Auth} & \textbf{Status} \\
+\midrule
+\texttt{/api/auth/me} & 401 Unauthorized & \pass \\
+\texttt{/api/messages/conversations} & 401 Unauthorized & \pass \\
+\texttt{/api/admin/users} & 401 Unauthorized & \pass \\
+\texttt{/api/admin/blockchain/blocks} & 401 Unauthorized & \pass \\
+\texttt{/api/ws} (WebSocket) & Rejected (code 4001) & \pass \\
+\texttt{/api/jobs/search} & 401 Unauthorized & \pass \\
+\texttt{/api/companies/} & 401 Unauthorized & \pass \\
+\texttt{/api/reports/admin/all} & 401 Unauthorized & \pass \\
+\bottomrule
+\end{tabular}
+\caption{All API and WebSocket endpoints require authentication}
+\end{table}
+
+% ================================================================
+\section{Security Headers Audit}
+% ================================================================
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{lXc}
+\toprule
+\textbf{Header} & \textbf{Value} & \textbf{Status} \\
+\midrule
+Strict-Transport-Security & max-age=31536000; includeSubDomains & \pass \\
+X-Frame-Options & DENY & \pass \\
+X-Content-Type-Options & nosniff & \pass \\
+Content-Security-Policy & default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; font-src 'self'; \textbf{object-src 'none'}; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; & \pass \\
+Referrer-Policy & strict-origin-when-cross-origin & \pass \\
+Permissions-Policy & camera=(), microphone=(), geolocation=() & \pass \\
+X-XSS-Protection & 1; mode=block & \pass \\
+X-Request-ID & Not present & \pass \\
+Server & nginx (version hidden) & \pass \\
+Content-Encoding & Not present (gzip disabled) & \pass \\
+\bottomrule
+\end{tabularx}
+\caption{Complete security header coverage on all response types}
+\end{table}
+
+% ================================================================
+\section{Re-Audit: Nikto Re-Scan (April 7, 2026)}
+% ================================================================
+
+Following WebSocket implementation, lockout mechanism redesign, and API retry logic, Nikto was re-run:
+
+\begin{lstlisting}
+$ nikto -h https://192.168.3.44 -ssl -nointeractive -Tuning x
+
++ Server: nginx
++ 6544 items checked: 0 error(s) and 8 item(s) reported
++ All 8 items are informational (security headers detected)
++ 0 vulnerabilities found
+\end{lstlisting}
+
+\textbf{Result:} Clean scan. All previously fixed issues remain fixed. The only items reported are positive confirmations of our security headers (HSTS, CSP, X-Frame-Options, etc.).
+
+% ================================================================
+\section{WebSocket Security Audit}
+% ================================================================
+
+A WebSocket endpoint (\texttt{wss://192.168.3.44/api/ws}) was added for real-time messaging notifications. The following security aspects were tested:
+
+\subsection{Authentication}
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{Xlc}
+\toprule
+\textbf{Check} & \textbf{Result} & \textbf{Status} \\
+\midrule
+Connect without token & Rejected (code 4001) & \pass \\
+Connect with expired JWT & Rejected (code 4003) & \pass \\
+Connect with pre-TOTP JWT (\texttt{totp\_verified: false}) & Rejected (code 4003) & \pass \\
+Connect with valid JWT & Accepted & \pass \\
+IP binding check (JWT IP $\neq$ request IP) & Rejected (code 4003) & \pass \\
+Suspended/inactive user & Rejected (code 4003) & \pass \\
+\bottomrule
+\end{tabularx}
+\caption{WebSocket authentication --- all checks enforced}
+\end{table}
+
+\subsection{Cross-Site WebSocket Hijacking (CSWSH)}
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{llX}
+\toprule
+\textbf{Finding} & \textbf{Severity} & \textbf{Details} \\
+\midrule
+Missing Origin validation & Medium & \fixd\ --- Origin header is now validated on every connection; only \texttt{https://192.168.3.44} is accepted. \\
+\bottomrule
+\end{tabularx}
+\caption{CSWSH vulnerability found and fixed during re-audit}
+\end{table}
+
+\subsection{WebSocket Configuration (nginx)}
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{Xc}
+\toprule
+\textbf{Check} & \textbf{Status} \\
+\midrule
+Separate location block (no rate limiting on persistent conn.) & \pass \\
+\texttt{proxy\_http\_version 1.1} with Upgrade/Connection headers & \pass \\
+Read/write timeout: 3600s (prevents idle kills) & \pass \\
+X-Real-IP forwarded for IP binding & \pass \\
+\bottomrule
+\end{tabularx}
+\caption{nginx WebSocket proxy --- properly configured}
+\end{table}
+
+% ================================================================
+\section{TOTP Lockout Mechanism Audit}
+% ================================================================
+
+The TOTP lockout was redesigned from email-based to IP-based progressive lockout:
+
+\begin{table}[H]
+\centering
+\begin{tabular}{llc}
+\toprule
+\textbf{Property} & \textbf{Value} & \textbf{Status} \\
+\midrule
+Lockout trigger & 3 failed attempts in 5 min & \pass \\
+Lockout scope & Per IP address & \pass \\
+First lockout duration & 60 minutes & \pass \\
+Progressive escalation & $\times$5 each time (300, 1500, \ldots) & \pass \\
+\textbf{Previous vulnerability:} email-based & Allowed DoS against any user & \fixd \\
+Lockout state persistence & Survives server restarts (DB-backed) & \pass \\
+TOTP validity window & $\pm$1 time-step ($\approx$90 seconds) & \pass \\
+\bottomrule
+\end{tabular}
+\caption{IP-based progressive TOTP lockout --- prevents account DoS}
+\end{table}
+
+% ================================================================
+\section{API Rate Limiting \& Resilience}
+% ================================================================
+
+\begin{table}[H]
+\centering
+\begin{tabular}{llc}
+\toprule
+\textbf{Limit Zone} & \textbf{Configuration} & \textbf{Status} \\
+\midrule
+Global API & 30 req/min per IP, burst 10 & \pass \\
+Auth endpoints & 5 req/min per IP, burst 3 & \pass \\
+WebSocket & Exempt (persistent connection) & \pass \\
+Frontend retry on 429/503 & 3-second delay + single retry & \pass \\
+Refresh token 429 handling & Does not trigger logout & \pass \\
+Message polling fallback & 60s interval (WebSocket is primary) & \pass \\
+\bottomrule
+\end{tabular}
+\caption{Rate limiting and resilience configuration}
+\end{table}
+
+% ================================================================
+\section{Re-Audit Confirmation: Comprehensive Testing (April 7, 2026)}
+% ================================================================
+
+All tools from the initial audit were re-run and additional manual tests were performed to confirm the security posture after new feature deployment.
+
+\subsection{nmap Re-Scan}
+
+Port scan was re-run with full service detection. Only ports 22 (SSH), 80 (HTTP$\to$444 drop), and 443 (HTTPS) are open. Backend and database remain bound to localhost only. No new services exposed.
+
+\subsection{nmap Vulnerability Scripts}
+
+\begin{lstlisting}
+$ sudo nmap --script vuln -p 443 192.168.3.44
+\end{lstlisting}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{llc}
+\toprule
+\textbf{Test} & \textbf{Result} & \textbf{Status} \\
+\midrule
+CSRF Detection & No CSRF found & \pass \\
+DOM-based XSS & No DOM XSS found & \pass \\
+Stored XSS & No stored XSS found & \pass \\
+DROWN (CVE-2016-0800) & Not vulnerable & \pass \\
+CVE-2011-3192 (Apache byterange) & Reported as vulnerable & \textcolor{success}{FP} \\
+\bottomrule
+\end{tabular}
+\caption{nmap vulnerability scripts --- 1 false positive (Apache-specific, runs nginx)}
+\end{table}
+
+\textbf{CVE-2011-3192 False Positive:} This vulnerability is specific to Apache's \texttt{mod\_byterange} module which causes exponential memory consumption with overlapping Range headers. Our nginx server handles multi-range requests safely---tested with \texttt{Range: bytes=0-5,1-3,2-4}: response was 206 Partial Content with a small 480-byte body (multipart boundaries). Not exploitable.
+
+\subsection{testssl.sh Re-Scan}
+
+TLS configuration re-verified: only TLS 1.2/1.3 offered, AEAD-only cipher suites, forward secrecy on all ciphers, all 14 CVE checks passed. HSTS active at 365 days.
+
+\subsection{sqlmap Re-Scan}
+
+All search endpoints retested (\texttt{/api/jobs}, \texttt{/api/users/search}, \texttt{/api/companies}): no injectable parameters found. Rate limiting detected as WAF.
+
+\subsection{wapiti Re-Scan}
+
+Full scan across 18 vulnerability categories: \textbf{0 vulnerabilities found}. CSP previously fixed remains correct.
+
+\subsection{gobuster Directory Enumeration}
+
+\begin{lstlisting}
+$ gobuster -m dir -u https://192.168.3.44 -w wordlist.txt
+  Wildcard response detected (SPA fallback, Status: 200)
+  /api (Status: 301) - only real route
+\end{lstlisting}
+
+The React SPA returns 200 for all unknown paths (serving \texttt{index.html}). Gobuster correctly identified this as a wildcard response. Only \texttt{/api} (301 redirect) is a genuine route. No hidden directories or files exposed.
+
+\subsection{HTTP Method Testing}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lcc}
+\toprule
+\textbf{HTTP Method} & \textbf{Response} & \textbf{Status} \\
+\midrule
+GET & 200 & \pass\ (allowed) \\
+POST & 200/401 & \pass\ (allowed) \\
+TRACE & 405 Method Not Allowed & \pass\ (blocked) \\
+OPTIONS & 405 Method Not Allowed & \pass\ (blocked) \\
+PUT & 405 Method Not Allowed & \pass\ (blocked) \\
+DELETE & 405 Method Not Allowed & \pass\ (blocked) \\
+\bottomrule
+\end{tabular}
+\caption{Only GET and POST accepted --- all dangerous methods blocked}
+\end{table}
+
+\subsection{CORS Validation}
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{lXc}
+\toprule
+\textbf{Origin} & \textbf{Response Headers} & \textbf{Status} \\
+\midrule
+\texttt{https://evil.com} & No \texttt{Access-Control-Allow-Origin} returned & \pass \\
+\texttt{https://192.168.3.44} & \texttt{Access-Control-Allow-Origin: https://192.168.3.44} + \texttt{credentials: true} & \pass \\
+\bottomrule
+\end{tabularx}
+\caption{CORS properly restricts cross-origin access}
+\end{table}
+
+\subsection{Cookie Security Flags}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{llc}
+\toprule
+\textbf{Flag} & \textbf{Value} & \textbf{Status} \\
+\midrule
+HttpOnly & Set on both access\_token and refresh\_token & \pass \\
+Secure & Set (HTTPS-only transmission) & \pass \\
+SameSite & strict (prevents CSRF) & \pass \\
+Max-Age (access) & 1800 seconds (30 minutes) & \pass \\
+Max-Age (refresh) & 604800 seconds (7 days) & \pass \\
+Path & / & \pass \\
+\bottomrule
+\end{tabular}
+\caption{All cookies have complete security flag coverage}
+\end{table}
+
+\subsection{Authentication Bypass Testing}
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{Xlc}
+\toprule
+\textbf{Test} & \textbf{Response} & \textbf{Status} \\
+\midrule
+Tampered JWT (forged admin role) on \texttt{/api/users/me/profile} & 401 Invalid or expired token & \pass \\
+No auth on \texttt{/api/admin/users} & 401 Authentication required & \pass \\
+Tampered JWT on \texttt{/api/admin/dashboard} & 401 Invalid or expired token & \pass \\
+Pre-TOTP JWT on \texttt{/api/users/search} & 403 TOTP verification required & \pass \\
+\bottomrule
+\end{tabularx}
+\caption{Auth bypass attempts --- all rejected}
+\end{table}
+
+\subsection{Injection \& Manipulation Tests}
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{Xlc}
+\toprule
+\textbf{Test} & \textbf{Response} & \textbf{Status} \\
+\midrule
+Path traversal (\texttt{/../../etc/passwd}) & 200 (SPA fallback, no file content) & \pass \\
+Null byte (\texttt{/\%00}) & 400 Bad Request & \pass \\
+CRLF injection (\texttt{/\%0d\%0aX-Injected: header}) & 200 (no injected headers) & \pass \\
+Host header (\texttt{Host: evil.com}) & 200 (static SPA, no redirect) & \pass \\
+XSS in search (\texttt{?q=<script>}) & 403 (TOTP required, never reaches DB) & \pass \\
+\bottomrule
+\end{tabularx}
+\caption{All injection and manipulation attempts blocked}
+\end{table}
+
+\subsection{Dependency Audit}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{llc}
+\toprule
+\textbf{Package Manager} & \textbf{Vulnerabilities Found} & \textbf{Status} \\
+\midrule
+npm audit (frontend) & 0 & \pass \\
+pip-audit (backend) & Unable to reach PyPI (offline) & N/A \\
+\bottomrule
+\end{tabular}
+\caption{Frontend dependencies clean --- backend requires online PyPI access}
+\end{table}
+
+\subsection{Debug Endpoint Exposure}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{lll}
+\toprule
+\textbf{Endpoint} & \textbf{Response} & \textbf{Status} \\
+\midrule
+\texttt{/docs} (Swagger UI) & SPA fallback (not API docs) & \pass \\
+\texttt{/redoc} (ReDoc) & SPA fallback (not API docs) & \pass \\
+\texttt{/openapi.json} & 404 & \pass \\
+\texttt{/api/docs} & 404 & \pass \\
+\texttt{/api/openapi.json} & 404 & \pass \\
+\bottomrule
+\end{tabular}
+\caption{FastAPI docs disabled (\texttt{DEBUG=false}) --- no API schema leakage}
+\end{table}
+
+% ================================================================
+\section{Fixes Applied During Audit}
+% ================================================================
+
+\begin{table}[H]
+\centering
+\begin{tabularx}{\textwidth}{clXl}
+\toprule
+\textbf{\#} & \textbf{Finding} & \textbf{Fix} & \textbf{File} \\
+\midrule
+\multicolumn{4}{l}{\textbf{Initial Audit (April 6, 2026)}} \\
+\midrule
+1 & BREACH (CVE-2013-3587) & \texttt{gzip off;} in nginx server block & nginx.conf \\
+2 & X-Request-ID leak & \texttt{proxy\_hide\_header} + removed from middleware response & nginx.conf, security.py \\
+3 & LUCKY13 (CVE-2013-0169) & AEAD-only cipher suite, CBC removed & nginx.conf \\
+4 & CSP missing object-src & Added \texttt{object-src 'none'} to all CSP headers & nginx.conf \\
+5 & /assets/ header loss & Re-added security headers in /assets/ location block & nginx.conf \\
+6 & Duplicate API headers & SecurityHeadersMiddleware deregistered (nginx handles all) & main.py \\
+\midrule
+\multicolumn{4}{l}{\textbf{Re-Audit (April 7, 2026)}} \\
+\midrule
+7 & CSWSH on WebSocket & Added Origin header validation against allowed origin & websocket.py \\
+8 & Email-based TOTP lockout & Changed to IP-based progressive lockout (prevents DoS) & totp\_service.py \\
+9 & Polling rate too high & WebSocket replaces polling; 60s fallback only & MessagesPage.jsx \\
+10 & No 429/503 retry & Added automatic retry with 3s delay in API interceptor & api.js \\
+\midrule
+\multicolumn{4}{l}{\textbf{Post-Audit Hardening (April 7, 2026 --- Late)}} \\
+\midrule
+11 & TOTP setup-verify enumeration & Uniform error response for all cases (no account existence leak) & auth.py \\
+12 & RDP port 3389 open (xrdp) & Stopped and disabled xrdp service; port confirmed closed & systemd \\
+13 & No application-level rate limits & Added 16 DB-backed daily/weekly limits per action type & action\_rate\_limit\_service.py \\
+14 & No rate limit user feedback & Added frontend toast notification on 429 with limit details & RateLimitToast.jsx, api.js \\
+\bottomrule
+\end{tabularx}
+\caption{All issues found were fixed during the audit sessions}
+\end{table}
+
+% ================================================================
+\section{Overall Assessment}
+% ================================================================
+
+\begin{center}
+\begin{tabular}{ll}
+\toprule
+\textbf{Category} & \textbf{Result} \\
+\midrule
+Critical vulnerabilities & \textbf{0} \\
+High vulnerabilities & \textbf{0} \\
+Medium vulnerabilities & \textbf{0} (all fixed) \\
+Low vulnerabilities & \textbf{0} (all fixed) \\
+SQL injection vectors & \textbf{0} \\
+XSS vectors & \textbf{0} \\
+CSRF vectors & \textbf{0} \\
+Known TLS/SSL CVEs clean & \textbf{14/14} \\
+Sensitive paths blocked & \textbf{12/12} \\
+API auth enforcement & \textbf{100\%} \\
+WebSocket auth enforcement & \textbf{100\%} \\
+Security headers present & \textbf{10/10} \\
+HTTP methods restricted & \textbf{4/4 blocked} (TRACE, OPTIONS, PUT, DELETE) \\
+CORS configured correctly & \textbf{Yes} (same-origin only) \\
+Cookie security flags & \textbf{3/3} (HttpOnly, Secure, SameSite=strict) \\
+Auth bypass attempts & \textbf{0/4 succeeded} \\
+Injection attempts & \textbf{0/5 succeeded} \\
+Frontend dep. vulnerabilities & \textbf{0} \\
+Debug endpoints exposed & \textbf{0} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\vspace{1em}
+
+The application demonstrates \textbf{defense-in-depth} across all four layers:
+
+\begin{enumerate}
+  \item \textbf{Kernel:} SYN cookies, TCP hardening, ICMP rate limiting
+  \item \textbf{nginx:} TLS termination, rate limiting, path blocking, security headers, connection limits, WebSocket proxy with origin isolation
+  \item \textbf{Application:} Pydantic validation, SQLAlchemy ORM, TOTP enforcement, JWT with short expiry + IP binding, progressive IP-based lockout, CSWSH protection, E2EE messaging (RSA-4096 + AES-256-GCM), RSA-PSS message signing, \textbf{16 DB-backed action rate limits} (daily + weekly per user/IP)
+  \item \textbf{Database:} Localhost binding, Argon2 password hashing, encrypted TOTP secrets, Fernet-encrypted resumes, SHA-256 hash-chained audit logs, blockchain integrity layer with Merkle trees and proof-of-work
+\end{enumerate}
+
+% ================================================================
+\section{Service Resilience}
+% ================================================================
+
+The following resilience mechanisms were implemented to ensure continuous availability
+and automatic recovery from crashes, hangs, and system-level failures.
+
+\subsection{Systemd Watchdog}
+
+The backend service is configured with \texttt{Type=notify} and \texttt{WatchdogSec=30}.
+The FastAPI application sends \texttt{WATCHDOG=1} keepalive signals every 15 seconds
+via the \texttt{sd\_notify} protocol. If the process hangs (deadlock, infinite loop,
+resource exhaustion), systemd detects the missed heartbeat after 30 seconds and
+automatically kills and restarts the process.
+
+\begin{verbatim}
+[Service]
+Type=notify
+NotifyAccess=all
+WatchdogSec=30
+Restart=always
+RestartSec=3
+StartLimitIntervalSec=60
+StartLimitBurst=10
+MemoryMax=2G
+CPUQuota=80%
+\end{verbatim}
+
+\subsection{Health Check Timer}
+
+A systemd timer (\texttt{vajrakavach-healthcheck.timer}) runs every 2 minutes and
+executes a health check script that:
+
+\begin{enumerate}
+  \item Sends an HTTPS request to \texttt{/api/health}
+  \item Retries up to 3 times with 5-second delays
+  \item If all retries fail, logs an alert via \texttt{syslog} and restarts the backend service
+\end{enumerate}
+
+This catches scenarios where the process is running but not serving requests
+(e.g., database connection pool exhaustion, event loop blocked).
+
+\subsection{Kernel Panic Auto-Reboot}
+
+The system is configured with \texttt{kernel.panic=10} (persisted in
+\texttt{/etc/sysctl.d/99-vajrakavach-panic.conf}), which automatically reboots the
+machine 10 seconds after a kernel panic, ensuring the system recovers from
+catastrophic OS-level failures without manual intervention.
+
+% ================================================================
+\section{Attack Mitigation, Tolerance, and Recovery}
+% ================================================================
+
+This section audits the platform across three security resilience pillars:
+preventing attacks from succeeding (mitigation), continuing to operate during
+attacks (tolerance), and recovering after attacks (recovery).
+
+\subsection{Attack Mitigation}
+
+\begin{center}
+\small
+\begin{tabularx}{\textwidth}{lXl}
+\toprule
+\textbf{Mechanism} & \textbf{Implementation} & \textbf{Location} \\
+\midrule
+Rate Limiting (Nginx) & 30~req/min global, 5~req/min on auth endpoints, burst queues & nginx.conf \\
+Rate Limiting (App) & 60~req/min global, 5~req/min on auth (defense-in-depth) & security.py \\
+Connection Limits & 15 concurrent connections per IP & nginx.conf \\
+Input Validation & Pydantic schemas with Field constraints (min/max length, regex) & schemas/*.py \\
+SQL Injection Prevention & SQLAlchemy ORM (parameterized queries), \texttt{escape\_like()} for LIKE/ILIKE & sanitize.py \\
+XSS Prevention & CSP header (script-src 'self'), React DOM escaping, X-XSS-Protection & nginx.conf \\
+CSRF Protection & SameSite=strict cookies, CORS same-origin policy & auth.py, nginx.conf \\
+CSWSH Protection & WebSocket Origin header validation against allowed origin & websocket.py \\
+HTTPS Enforcement & HTTP port returns 444 (connection close), HSTS max-age=31536000 & nginx.conf \\
+TLS Configuration & TLSv1.2/1.3 only, AEAD ciphers (\verb|!CBC|), server cipher preference & nginx.conf \\
+Password Hashing & Argon2id (memory-hard, side-channel resistant) & auth\_service.py \\
+Password Policy & 8--72 chars, uppercase, lowercase, digit, special character required & schemas/auth.py \\
+JWT Security & Short expiry (15 min access), IP binding, type claims, HS256 & auth\_service.py \\
+TOTP 2FA & RFC~6238 TOTP with 90-second window, encrypted secrets (Fernet) & totp\_service.py \\
+Progressive Lockout & IP-based: 3 failures in 5~min $\rightarrow$ 60~min lockout, $\times 5$ escalation & totp\_service.py \\
+Token Revocation & SHA-256 hashed blocklist, DB-backed + in-memory cache & auth\_service.py \\
+BREACH Prevention & HTTP compression disabled (\texttt{gzip off}) & nginx.conf \\
+Path Blocking & Dotfiles, .env, .git, wp-admin, phpinfo, etc. return 404 & nginx.conf \\
+Debug Endpoint Blocking & /api/docs, /api/redoc, /openapi.json disabled in production & nginx.conf, main.py \\
+Body Size Limits & 1~MB default, 5~MB for API uploads & nginx.conf \\
+Request ID Concealment & X-Request-ID generated internally, stripped from responses & security.py, nginx.conf \\
+LAN-Only Access & Nginx \texttt{allow 192.168.0.0/16; deny all} — not internet-exposed & nginx.conf \\
+E2E Encryption & RSA-4096 key exchange + AES-256-GCM for messages & pki\_service.py \\
+Message Signing & RSA-PSS with SHA-256 for message authenticity & pki\_service.py \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\subsection{Attack Tolerance}
+
+These mechanisms allow the system to continue operating under active attack:
+
+\begin{center}
+\small
+\begin{tabularx}{\textwidth}{lX}
+\toprule
+\textbf{Mechanism} & \textbf{Description} \\
+\midrule
+Dual Rate Limiting & Both Nginx (kernel-level, fast) and application layers rate-limit independently. An attacker cannot bypass one without hitting the other. \\
+Resource Ceilings & \texttt{MemoryMax=2G} and \texttt{CPUQuota=80\%} prevent a compromised or overloaded backend from exhausting host resources. \\
+Connection Throttling & Nginx enforces 15 concurrent connections per IP. DNS amplification or slowloris attacks are bounded. \\
+Database Connection Pool & PostgreSQL connection pool (\texttt{pool\_size=10, max\_overflow=5, pool\_pre\_ping=True}) prevents connection exhaustion under load. \\
+Progressive Lockout & Brute-force attackers face exponentially increasing lockout: 60~min $\rightarrow$ 300~min $\rightarrow$ 1500~min $\rightarrow$ 7500~min. System continues serving legitimate users. \\
+WebSocket Isolation & Each WebSocket connection is authenticated independently; a compromised connection cannot affect others. Dead connections are cleaned up automatically. \\
+Async Architecture & FastAPI with asyncio processes requests concurrently without blocking. A slow request (e.g., mining a block) does not block other requests. \\
+Graceful Degradation & Rate-limited clients receive HTTP~429 with retry guidance. Auth-locked IPs receive clear lockout messages. Health endpoint remains always available. \\
+HTTP~444 on Plain HTTP & Port~80 returns 444 (close connection immediately) — no resources spent serving plain-text probes. \\
+Periodic Cleanup & Rate limit and lockout dictionaries are automatically cleaned up every 60 seconds, preventing memory growth from distributed attacks. \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\subsection{Attack Recovery}
+
+These mechanisms enable the system to recover automatically after an attack or failure:
+
+\begin{center}
+\small
+\begin{tabularx}{\textwidth}{lX}
+\toprule
+\textbf{Mechanism} & \textbf{Description} \\
+\midrule
+Auto-Restart & \texttt{Restart=always} with \texttt{RestartSec=3}: systemd restarts the backend within 3 seconds of any crash. Up to 10 restarts allowed in 60 seconds. \\
+Watchdog Recovery & \texttt{WatchdogSec=30}: if the process hangs (not just crashes), systemd kills and restarts it within 30 seconds. \\
+Health Check Timer & External health check every 2 minutes with 3 retries. Catches ``alive but unresponsive'' scenarios and auto-restarts. \\
+Kernel Panic Reboot & \texttt{kernel.panic=10}: system reboots 10 seconds after a kernel panic, recovering from catastrophic OS failures. \\
+Token Revocation & Compromised tokens can be revoked immediately; the blocklist persists across restarts (DB-backed). \\
+Audit Trail & SHA-256 hash-chained audit logs provide tamper-evident forensic evidence of pre-attack, attack, and post-attack activity. \\
+Blockchain Integrity & Merkle-tree blocks with proof-of-work over audit entries enable detection of any log tampering after an attack. \\
+Security State Persistence & TOTP lockout state and token revocation cache are persisted to PostgreSQL on shutdown and reloaded on startup — surviving any restart. \\
+File Integrity & Resume files are encrypted with Fernet (AES-128-CBC + HMAC-SHA256); tampering is detectable via the HMAC. SHA-256 checksums stored per file. \\
+Service Dependency Chain & systemd \texttt{Requires=postgresql.service} ensures the database is always available before the backend starts. \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\subsection{Resilience Summary}
+
+\begin{center}
+\begin{tabular}{ll}
+\toprule
+\textbf{Pillar} & \textbf{Count of Mechanisms} \\
+\midrule
+Attack Mitigation & \textbf{23 mechanisms} \\
+Attack Tolerance & \textbf{10 mechanisms} \\
+Attack Recovery & \textbf{10 mechanisms} \\
+\midrule
+Total Resilience Mechanisms & \textbf{43} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\end{document}

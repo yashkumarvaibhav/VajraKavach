@@ -1,0 +1,1470 @@
+\documentclass[12pt,a4paper]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{graphicx}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{booktabs}
+\usepackage{xcolor}
+\usepackage{amssymb}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{listings}
+\usepackage{float}
+\usepackage{tabularx}
+\usepackage{longtable}
+\usepackage{multirow}
+\usepackage{tcolorbox}
+\usepackage{mdframed}
+
+\definecolor{primary}{RGB}{30,64,175}
+\definecolor{codebg}{RGB}{245,245,250}
+\definecolor{codetext}{RGB}{40,40,40}
+\definecolor{success}{RGB}{22,163,74}
+\definecolor{warning}{RGB}{202,138,4}
+\definecolor{danger}{RGB}{220,38,38}
+\definecolor{info}{RGB}{37,99,235}
+\definecolor{lightbg}{RGB}{240,245,255}
+\definecolor{tipbg}{RGB}{240,253,244}
+\definecolor{warnbg}{RGB}{254,252,232}
+\definecolor{dangerbg}{RGB}{254,242,242}
+
+\lstset{
+  backgroundcolor=\color{codebg},
+  basicstyle=\ttfamily\small\color{codetext},
+  breaklines=true,
+  frame=single,
+  rulecolor=\color{gray!30},
+  xleftmargin=0.5cm,
+  framexleftmargin=0.5cm,
+  numbers=none,
+  showstringspaces=false,
+}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=primary,
+  urlcolor=primary,
+  citecolor=primary,
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small VajraKavach --- User Guide}
+\fancyhead[R]{\small CSE 345/545}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+\titleformat{\section}{\large\bfseries\color{primary}}{}{0em}{}
+\titleformat{\subsection}{\normalsize\bfseries\color{primary!80!black}}{}{0em}{}
+\titleformat{\subsubsection}{\small\bfseries\color{primary!60!black}}{}{0em}{}
+
+% Custom boxes
+\newtcolorbox{tipbox}{
+  colback=tipbg,
+  colframe=success,
+  coltitle=success,
+  title={$\star$ Tip},
+  fonttitle=\bfseries,
+  boxrule=0.5pt,
+  left=6pt,right=6pt,top=4pt,bottom=4pt,
+}
+
+\newtcolorbox{warnbox}{
+  colback=warnbg,
+  colframe=warning,
+  coltitle=warning!80!black,
+  title={$\triangle$ Important},
+  fonttitle=\bfseries,
+  boxrule=0.5pt,
+  left=6pt,right=6pt,top=4pt,bottom=4pt,
+}
+
+\newtcolorbox{dangerbox}{
+  colback=dangerbg,
+  colframe=danger,
+  coltitle=danger,
+  title={$\otimes$ Warning},
+  fonttitle=\bfseries,
+  boxrule=0.5pt,
+  left=6pt,right=6pt,top=4pt,bottom=4pt,
+}
+
+\newtcolorbox{infobox}{
+  colback=lightbg,
+  colframe=info,
+  coltitle=info,
+  title={$\oplus$ Note},
+  fonttitle=\bfseries,
+  boxrule=0.5pt,
+  left=6pt,right=6pt,top=4pt,bottom=4pt,
+}
+
+% Screenshot placeholder command
+\newcommand{\screenshot}[2]{%
+  \begin{figure}[H]
+    \centering
+    \includegraphics[width=0.85\textwidth]{screenshots/#1}
+    \caption{#2}
+    \label{fig:#1}
+  \end{figure}
+}%
+
+
+\begin{document}
+
+% ============= TITLE PAGE =============
+\begin{titlepage}
+\centering
+\vspace*{2cm}
+{\Huge\bfseries\color{primary} VajraKavach\par}
+\vspace{0.5cm}
+{\Large Secure Job Search \& Professional Networking Platform\par}
+\vspace{2cm}
+{\LARGE\bfseries User Guide\par}
+\vspace{0.3cm}
+{\large Comprehensive Platform Usage Manual\par}
+\vspace{0.3cm}
+{\large CSE 345/545: Foundations to Computer Security\par}
+\vspace{2cm}
+
+\begin{tabular}{ll}
+\toprule
+\textbf{Version} & 1.0 \\
+\textbf{Date} & April 2025 \\
+\textbf{Platform URL} & \texttt{https://192.168.3.44} \\
+\textbf{Audience} & Users, Recruiters, Admins \\
+\textbf{Course} & CSE 345/545 --- IIIT-Delhi \\
+\bottomrule
+\end{tabular}
+
+\vfill
+{\small This guide covers all platform features for the three user roles:\\User (Job Seeker), Recruiter, and Admin.}
+\end{titlepage}
+
+\newpage
+\tableofcontents
+\newpage
+
+% ============= 1. INTRODUCTION =============
+\section{Introduction}
+
+VajraKavach is a \textbf{Secure Job Search \& Professional Networking Platform} built for the CSE~345/545 course at IIIT-Delhi. It provides a LinkedIn-like experience with enterprise-grade security features including:
+
+\begin{itemize}[leftmargin=*]
+  \item \textbf{TOTP-based Two-Factor Authentication} with a virtual keyboard to prevent keyloggers
+  \item \textbf{End-to-End Encrypted (E2EE) Messaging} using RSA-4096 + AES-256-GCM hybrid encryption
+  \item \textbf{Encrypted Resume Storage} with TOTP-gated downloads
+  \item \textbf{PKI-backed Trust} for message signing and resume integrity
+  \item \textbf{Tamper-Evident Audit Logs} with hash chaining and optional blockchain
+  \item \textbf{Role-Based Access Control (RBAC)} across four roles
+\end{itemize}
+
+\subsection{User Roles}
+
+The platform supports three user-facing roles:
+
+\begin{longtable}{p{3cm}p{10cm}}
+\toprule
+\textbf{Role} & \textbf{Capabilities} \\
+\midrule
+\textbf{User} (Job Seeker) & Create and edit profile, upload/download resumes, search and apply for jobs, track applications, send/receive encrypted messages, manage connections, view connection graph \\
+\midrule
+\textbf{Recruiter} & All User capabilities plus: create company pages, post and manage job listings, view and manage applicants, update application statuses, message candidates \\
+\midrule
+\textbf{Admin} & All User capabilities plus: access admin dashboard (\textbf{view-only mode}), view all users, view all job listings, view resumes metadata, view audit logs, verify hash chain integrity, view blockchain blocks, view user reports. \textit{Note: Admin cannot suspend/delete users, delist jobs, create announcements, mine blockchain blocks, or resolve reports --- those actions require super admin (Platform Admin) privileges which are not available through registration.} \\
+\bottomrule
+\end{longtable}
+
+\begin{infobox}
+Your role is assigned during registration. Roles cannot be changed after registration. If you need to change the roles, delete your account and create new account.
+
+The \textbf{Admin} role available during registration gives you \textbf{read-only access} to the admin dashboard. Full administrative privileges (suspending users, deleting accounts, delisting jobs, creating announcements, mining blockchain, resolving reports) are reserved for the \textbf{Platform Admin} (super admin) role, which is not available through self-registration.
+\end{infobox}
+
+
+% ============= 2. GETTING STARTED =============
+\section{Getting Started}
+
+\subsection{System Requirements}
+
+\begin{itemize}[leftmargin=*]
+  \item A modern web browser (Chrome, Firefox, Edge, Safari)
+  \item Network access to \texttt{192.168.3.0/24} subnet (LAN connectivity)
+  \item A TOTP authenticator app installed on your phone:
+    \begin{itemize}
+      \item \textbf{Recommended:} Google Authenticator, Microsoft Authenticator, Authy, or FreeOTP
+    \end{itemize}
+  \item The VajraKavach root CA certificate installed on your device (see Section~\ref{sec:cert-install})
+\end{itemize}
+
+\subsection{Certificate Installation}
+\label{sec:cert-install}
+
+VajraKavach uses a self-signed TLS certificate for HTTPS. To avoid browser security warnings, you must install the root CA certificate (\texttt{rootCA.pem}) on your device.
+
+\begin{warnbox}
+Without the certificate installed, your browser will display a ``Your connection is not private'' warning every time you visit the platform. Installing the certificate removes this warning and enables full HTTPS trust.
+\end{warnbox}
+
+\subsubsection{Obtaining the Certificate}
+
+The certificate file \texttt{rootCA.pem} is distributed via Google Drive. Link to certificate file : \href{https://drive.google.com/file/d/1Eurorvse45uq3hAEmx7_i7uWV1wvFLag/view?usp=sharing}{Link to certificate file}
+
+
+\begin{enumerate}
+  \item Open the shared Google Drive link provided to you
+  \item Download the file named \texttt{rootCA.pem}
+  \item Save it to a known location on your device (e.g., Downloads folder)
+\end{enumerate}
+
+\screenshot{cert-google-drive.png}{Google Drive link showing the rootCA.pem file available for download}
+
+\subsubsection{Installing on Linux (Ubuntu/Debian)}
+
+\begin{enumerate}
+  \item Open a terminal
+  \item Copy the certificate to the trusted store:
+\begin{lstlisting}
+sudo cp rootCA.pem /usr/local/share/ca-certificates/vajrakavach-rootCA.crt
+\end{lstlisting}
+  \item Update the certificate store:
+\begin{lstlisting}
+sudo update-ca-certificates
+\end{lstlisting}
+  \item \textbf{For browser trust (Chrome/Chromium):}
+    \begin{enumerate}
+      \item Open Chrome and navigate to \texttt{chrome://settings/certificates}
+      \item Click the \textbf{Authorities} tab
+      \item Click \textbf{Import}, select the \texttt{rootCA.pem} file
+      \item Check \textbf{``Trust this certificate for identifying websites''}
+      \item Click \textbf{OK}
+    \end{enumerate}
+  \item \textbf{For Firefox:}
+    \begin{enumerate}
+      \item Open Firefox and navigate to \texttt{about:preferences\#privacy}
+      \item Scroll to \textbf{Certificates} and click \textbf{View Certificates}
+      \item Under \textbf{Authorities}, click \textbf{Import}
+      \item Select the \texttt{rootCA.pem} file
+      \item Check \textbf{``Trust this CA to identify websites''} and click \textbf{OK}
+    \end{enumerate}
+\end{enumerate}
+
+\subsubsection{Installing on Windows}
+
+\begin{enumerate}
+  \item Double-click the downloaded \texttt{rootCA.pem} file
+  \item In the Certificate dialog, click \textbf{Install Certificate\ldots}
+  \item Select \textbf{Local Machine} (requires Administrator) or \textbf{Current User}
+  \item Click \textbf{Next}
+  \item Select \textbf{``Place all certificates in the following store''}
+  \item Click \textbf{Browse}, select \textbf{``Trusted Root Certification Authorities''}
+  \item Click \textbf{Next}, then \textbf{Finish}
+  \item Accept the security warning prompt
+  \item Restart your browser
+\end{enumerate}
+
+\begin{tipbox}
+On Windows, Chrome and Edge automatically use the system certificate store. Firefox uses its own store --- if you use Firefox on Windows, follow the Firefox steps from the Linux section above.
+\end{tipbox}
+
+\subsubsection{Installing on macOS}
+
+\begin{enumerate}
+  \item Double-click the downloaded \texttt{rootCA.pem} file to open it in \textbf{Keychain Access}
+  \item Select the \textbf{System} keychain (or \textbf{login} keychain)
+  \item Click \textbf{Add}
+  \item Find the certificate in the keychain, double-click it
+  \item Expand the \textbf{Trust} section
+  \item Set \textbf{``When using this certificate''} to \textbf{``Always Trust''}
+  \item Close the dialog and enter your macOS password to confirm
+  \item Restart your browser
+\end{enumerate}
+
+
+\subsubsection{Installing on Android}
+
+\begin{enumerate}
+  \item Download \texttt{rootCA.pem} from the Google Drive link on your Android device
+  \item Go to \textbf{Settings} $\rightarrow$ \textbf{Security} (or \textbf{Security \& Privacy})
+  \item Tap \textbf{Encryption \& credentials} (or \textbf{More security settings})
+  \item Tap \textbf{Install a certificate} $\rightarrow$ \textbf{CA certificate}
+  \item Tap \textbf{Install anyway} when warned
+  \item Browse to and select the downloaded \texttt{rootCA.pem} file
+  \item The certificate will be installed and visible under \textbf{Trusted credentials} $\rightarrow$ \textbf{User} tab
+\end{enumerate}
+
+\begin{warnbox}
+The exact path varies by Android version and manufacturer. On Samsung devices, look under \textbf{Settings $\rightarrow$ Biometrics and Security $\rightarrow$ Other security settings $\rightarrow$ Install from device storage}. On Pixel devices, look under \textbf{Settings $\rightarrow$ Security $\rightarrow$ More security settings $\rightarrow$ Encryption \& credentials}.
+\end{warnbox}
+
+
+\subsubsection{Installing on iOS / iPadOS}
+
+\begin{enumerate}
+  \item Download \texttt{rootCA.pem} from the Google Drive link on your iOS device
+  \item A prompt will appear saying \textbf{``Profile Downloaded''} --- tap \textbf{Close}
+  \item Go to \textbf{Settings} $\rightarrow$ \textbf{General} $\rightarrow$ \textbf{VPN \& Device Management}
+  \item Under \textbf{Downloaded Profile}, tap the VajraKavach certificate
+  \item Tap \textbf{Install} (enter your device passcode)
+  \item Tap \textbf{Install} again on the warning screen
+  \item Go to \textbf{Settings} $\rightarrow$ \textbf{General} $\rightarrow$ \textbf{About} $\rightarrow$ \textbf{Certificate Trust Settings}
+  \item Enable full trust for the VajraKavach root certificate
+\end{enumerate}
+
+\subsection{Accessing the Platform}
+
+Once the certificate is installed:
+
+\begin{enumerate}
+  \item Open your browser
+  \item Navigate to \textbf{\texttt{https://192.168.3.44}}
+  \item The landing page should load without any certificate warnings
+  \item You should see the VajraKavach landing page with options to \textbf{Login/Sign in} or \textbf{Register}
+\end{enumerate}
+
+\screenshot{landing-page.png}{VajraKavach landing page showing the platform name, description, and Login/Register buttons}
+
+
+% ============= 3. REGISTRATION =============
+\section{Registration \& Account Setup}
+
+\subsection{Creating an Account}
+
+\begin{enumerate}
+  \item From the landing page, click the \textbf{Get Started} button (or navigate to \texttt{/register})
+  \item Fill in the registration form:
+    \begin{itemize}
+      \item \textbf{Full Name} --- your display name on the platform
+      \item \textbf{Email Address} --- must be unique; used for login
+      \item \textbf{Password} --- must meet the following requirements:
+        \begin{itemize}
+          \item 8--72 characters
+          \item At least one uppercase letter
+          \item At least one lowercase letter
+          \item At least one digit
+          \item At least one special character
+        \end{itemize}
+        A \textbf{password strength indicator} shows which requirements are met.
+      \item \textbf{Phone} (optional) --- select a country code (e.g., IN +91, US +1) and enter your phone number
+      \item \textbf{Role} --- select one of: \textbf{Job Seeker}, \textbf{Recruiter}, or \textbf{Admin (Read-only)}
+    \end{itemize}
+  \item Click \textbf{Register}
+\end{enumerate}
+
+\screenshot{register-form.png}{Registration form with fields for name, email, password, confirm password, and role selection}
+
+\subsection{Setting Up TOTP (Two-Factor Authentication)}
+
+After clicking Register, you will be presented with a TOTP setup screen. This is \textbf{mandatory} --- you cannot use the platform without TOTP.
+
+\begin{enumerate}
+  \item A \textbf{QR code} will appear on screen
+  \item Open your authenticator app (e.g., Google Authenticator)
+  \item Tap the \textbf{+} button in your authenticator app and select \textbf{Scan QR Code}
+  \item Scan the QR code displayed on the VajraKavach screen
+  \item Your authenticator app will now generate a 6-digit code that changes every 30 seconds
+  \item Enter the current 6-digit code using the \textbf{virtual keyboard} displayed on screen
+  \item Click \textbf{Verify} to complete the setup
+\end{enumerate}
+
+\begin{dangerbox}
+\textbf{Save your TOTP secret!} If you lose access to your authenticator app, you will need the TOTP secret to recover your account. Some authenticator apps (like Authy) support cloud backup. Google Authenticator can export codes via QR transfer to a new device.
+\end{dangerbox}
+
+\screenshot{totp-setup-qr.png}{TOTP setup screen showing the QR code and a backup secret key}
+
+\subsection{Using the Virtual Keyboard}
+
+The virtual keyboard is a security feature designed to protect your TOTP codes from keyloggers and screen-recording malware.
+
+\begin{itemize}[leftmargin=*]
+  \item The keyboard displays digits 0--9 in a \textbf{randomized layout} (positions shuffle each time)
+  \item Click the digit buttons to enter your 6-digit TOTP code
+  \item Use the \textbf{Back} button to delete the last digit
+  \item Use the \textbf{Clear} button to erase all entered digits (this also re-shuffles the layout)
+  \item You can toggle to a physical keyboard input if preferred
+\end{itemize}
+
+
+\begin{tipbox}
+The digit positions are randomized each time the virtual keyboard loads or when you press Clear. This means even if someone is watching your screen, they cannot determine your code from button positions alone.
+\end{tipbox}
+
+
+% ============= 4. LOGIN =============
+\section{Login \& Authentication}
+
+\subsection{Logging In}
+
+\begin{enumerate}
+  \item Navigate to \texttt{https://192.168.3.44} and click \textbf{Login}
+  \item Enter your registered \textbf{email address}
+  \item Enter your \textbf{password}
+  \item Click \textbf{Login}
+  \item You will be redirected to the TOTP verification page
+\end{enumerate}
+
+\screenshot{login-page.png}{Login page with email and password fields}
+
+\subsection{TOTP Verification}
+
+After entering your credentials:
+
+\begin{enumerate}
+  \item Open your authenticator app on your phone
+  \item Note the current 6-digit code for VajraKavach
+  \item Enter the code using the \textbf{virtual keyboard} on screen
+  \item Click \textbf{Verify}
+  \item Upon successful verification, you will be redirected to your \textbf{Dashboard}
+\end{enumerate}
+
+\begin{warnbox}
+Although your authenticator app refreshes the code every 30 seconds, the server accepts the current code \textbf{plus one adjacent time-step} (\texttt{valid\_window=1}), giving each code an effective validity of approximately \textbf{90 seconds}. If verification still fails, wait for a completely fresh code and try again.
+
+\textbf{Account lockout:} After \textbf{3 failed TOTP attempts within 5 minutes}, your IP address is locked out for \textbf{60 minutes}. Subsequent lockouts escalate progressively (\texttimes5 each time: 60~min $\rightarrow$ 300~min $\rightarrow$ 1500~min, etc.). The lockout is tracked by \textbf{IP address}, not email.
+\end{warnbox}
+
+\screenshot{totp-verify.png}{TOTP verification page with the virtual keyboard and a 6-digit input field}
+
+\subsection{Key Import Prompt}
+
+If you are logging in from a \textbf{new device or browser}, you may see a Key Import prompt. This is because VajraKavach generates unique encryption keys per device for E2EE messaging.
+
+\begin{itemize}[leftmargin=*]
+  \item \textbf{Import Key:} If you have a \texttt{.vkkey} backup file from your previous device, enter your password and import the file to retain access to your old encrypted messages
+  \item \textbf{Dismiss:} If you don't have a backup, dismiss the prompt. A new key pair will be generated, but you won't be able to read messages encrypted with your old key
+\end{itemize}
+
+\screenshot{key-import-prompt.png}{Key import modal dialog asking for password and .vkkey file selection}
+
+\subsection{Forgot Password}
+
+If you forget your password, you can reset it using your TOTP:
+
+\begin{enumerate}
+  \item On the login page, click \textbf{``Forgot Password?''}
+  \item Enter your registered \textbf{email address}
+  \item Enter your \textbf{new password} (must meet password requirements); a strength indicator is shown
+  \item Confirm your new password
+  \item Enter your \textbf{TOTP code} using the virtual keyboard
+  \item Click \textbf{Reset Password}
+\end{enumerate}
+
+\begin{infobox}
+Password reset via TOTP is more secure than email-based reset because it requires possession of your authenticator device. After resetting your password, all existing sessions on other devices are invalidated and you must log in again.
+\end{infobox}
+
+\screenshot{forgot-password.png}{Forgot password page with email, TOTP, and new password fields}
+
+
+% ============= 5. DASHBOARD =============
+\section{Dashboard}
+
+After logging in, you are taken to the Dashboard --- your central hub for navigating the platform.
+
+\subsection{User Dashboard}
+
+The User (Job Seeker) dashboard displays quick-access cards for:
+
+\begin{itemize}[leftmargin=*]
+  \item \textbf{Browse Jobs} --- Search and apply for positions
+  \item \textbf{My Applications} --- Track your submitted applications (shows count)
+  \item \textbf{My Resume} --- Manage your encrypted resume
+  \item \textbf{Connections} --- View and manage professional connections (shows count)
+  \item \textbf{Messages} --- Access your encrypted conversations (shows count)
+  \item \textbf{Profile Views} --- See how many people viewed your profile
+  \item \textbf{Security} --- Change password and TOTP settings
+\end{itemize}
+
+\screenshot{dashboard-user.png}{User dashboard showing cards for Browse Jobs, My Applications, My Resume, Connections, Messages, Profile Views, and Security}
+
+\subsection{Recruiter Dashboard}
+
+The Recruiter dashboard displays the following cards:
+
+\begin{itemize}[leftmargin=*]
+  \item \textbf{My Companies} --- View and manage your companies (shows company count)
+  \item \textbf{My Job Postings} --- View your active job listings (shows listing count)
+  \item \textbf{Connections} --- View and manage professional connections (shows connection count)
+  \item \textbf{Messages} --- Access your encrypted conversations (shows conversation count)
+  \item \textbf{Profile Views} --- See how many people viewed your profile
+  \item \textbf{Security} --- Change password and TOTP settings
+\end{itemize}
+
+\screenshot{dashboard-recruiter.png}{Recruiter dashboard showing cards for My Companies, My Job Postings, Connections, Messages, Profile Views, and Security}
+
+\subsection{Admin Dashboard}
+
+The Admin dashboard displays the following cards:
+
+\begin{itemize}[leftmargin=*]
+  \item \textbf{Admin Panel} --- Access the full admin dashboard to manage platform users (see Section~\ref{sec:admin})
+  \item \textbf{All Jobs} --- Monitor all job listings on the platform
+  \item \textbf{Companies} --- Browse registered companies
+  \item \textbf{Security} --- Change password and TOTP settings
+\end{itemize}
+
+\screenshot{dashboard-admin.png}{Admin dashboard showing cards for Admin Panel, All Jobs, Companies, and Security}
+
+\subsection{Announcements}
+
+If there are any active platform announcements (created by a Platform Admin), they appear below the dashboard cards in a dedicated section:
+
+\begin{itemize}[leftmargin=*]
+  \item Each announcement shows: title, content, sender name, date/time, and a \textbf{``Server-side encrypted''} badge
+  \item Announcements are visible to all users regardless of role
+\end{itemize}
+
+\subsection{Navigation Bar}
+
+The top navigation bar is always visible when you are logged in. It provides:
+
+\begin{itemize}[leftmargin=*]
+  \item The \textbf{VajraKavach} logo (click to go to Dashboard)
+  \item Role-specific navigation links:
+    \begin{itemize}
+      \item \textbf{Users:} Dashboard, Connections, Messages, Companies, Jobs, Applications, Resume, Profile, Security
+      \item \textbf{Recruiters:} Dashboard, Connections, Messages, Companies, Profile, Security
+      \item \textbf{Admins:} Dashboard, Companies, Admin Panel, Jobs, Profile, Security
+    \end{itemize}
+  \item \textbf{Logout} button (right side)
+\end{itemize}
+
+\subsection{Greeting Bar}
+
+Below the navigation bar, a greeting bar displays:
+
+\begin{itemize}[leftmargin=*]
+  \item Your name and role
+  \item Dual clock: \textbf{IST} (12-hour format) and \textbf{UTC} (24-hour format)
+  \item Your current \textbf{IP address} (for session transparency)
+\end{itemize}
+
+\screenshot{navbar-greeting.png}{Navigation bar and greeting bar showing user name, role, clocks, and IP address}
+
+
+% ============= 6. PROFILE =============
+\section{Profile Management}
+
+\subsection{Viewing Your Profile}
+
+Navigate to \textbf{Profile} from the navbar or dashboard.
+
+Your profile page displays:
+
+\begin{itemize}[leftmargin=*]
+  \item \textbf{Profile view count} in the header (e.g., ``12 profile views'')
+  \item \textbf{Avatar/Profile Picture} with upload button (JPG, PNG, GIF; max 2MB)
+  \item \textbf{Basic Information:} Name (editable), Email (read-only), Headline, Bio, Location, Website, Skills (comma-separated)
+  \item \textbf{Education} section (list of education entries with Grade/GPA)
+  \item \textbf{Experience} section (list of work experiences)
+  \item \textbf{Privacy Settings} per field (Public, Connections Only, Private)
+  \item \textbf{Encryption Keys} management section (export/import)
+  \item \textbf{Profile Viewers} section (viewer list with visibility toggle)
+\end{itemize}
+
+\screenshot{profile-page.png}{Full profile page showing avatar, basic info, education, experience, and skills sections}
+
+\subsection{Editing Your Profile}
+
+All profile fields are edited inline --- there is no separate ``edit mode.'' Simply modify any field and click \textbf{Save} at the top of the section.
+
+\begin{enumerate}
+  \item In the \textbf{Basic Information} section, edit the following fields:
+    \begin{itemize}
+      \item \textbf{Full Name} --- your display name
+      \item \textbf{Headline} --- a short professional tagline (e.g., ``Software Engineer at Google''), max 255 characters
+      \item \textbf{Bio} --- a longer description about yourself, max 5000 characters
+      \item \textbf{Location} --- your city or country
+      \item \textbf{Website} --- personal or portfolio URL (auto-prepends \texttt{https://} if missing)
+      \item \textbf{Skills} --- comma-separated list (e.g., ``Python, React, Machine Learning'')
+    \end{itemize}
+  \item Each field (except Name and Email) has a \textbf{privacy dropdown} next to it
+  \item Click \textbf{Save} at the top right of the Basic Information card
+\end{enumerate}
+
+\begin{infobox}
+Your email address cannot be changed after registration. It is displayed as read-only.
+\end{infobox}
+
+\subsubsection{Adding Education}
+
+\begin{enumerate}
+  \item Scroll to the \textbf{Education} section
+  \item Click \textbf{Add Education}
+  \item Fill in the fields:
+    \begin{itemize}
+      \item \textbf{Institution} --- university or school name
+      \item \textbf{Degree} --- e.g., B.Tech, M.Sc.
+      \item \textbf{Field of Study} --- e.g., Computer Science
+      \item \textbf{Start Year} and \textbf{End Year}
+      \item \textbf{Grade/GPA} and \textbf{Max Grade/Scale} (e.g., 9.2 out of 10)
+    \end{itemize}
+  \item Click \textbf{Save}
+  \item To delete an entry, click the \textbf{Delete} (trash) icon on the entry
+\end{enumerate}
+
+\screenshot{profile-education.png}{Education section with form fields for institution, degree, field of study, and dates}
+
+\subsubsection{Adding Experience}
+
+\begin{enumerate}
+  \item Scroll to the \textbf{Experience} section
+  \item Click \textbf{Add Experience}
+  \item Fill in the fields:
+    \begin{itemize}
+      \item \textbf{Company} --- company name
+      \item \textbf{Title} --- your job title
+      \item \textbf{Location} --- city, country
+      \item \textbf{Description} --- what you did (max 5000 characters)
+      \item \textbf{Start Date} and \textbf{End Date}
+    \end{itemize}
+  \item Click \textbf{Save}
+  \item To delete an entry, click the \textbf{Delete} (trash) icon on the entry
+\end{enumerate}
+
+\screenshot{profile-experience.png}{Experience section with form for company, title, location, dates, and description}
+
+\subsection{Privacy Settings}
+
+Each profile field can have one of three privacy levels:
+
+\begin{longtable}{p{3.5cm}p{9.5cm}}
+\toprule
+\textbf{Privacy Level} & \textbf{Who Can See} \\
+\midrule
+\textbf{Public} & Anyone on the platform \\
+\textbf{Connections Only} & Only your accepted connections \\
+\textbf{Private} & Only you \\
+\bottomrule
+\end{longtable}
+
+To change a field's privacy:
+\begin{enumerate}
+  \item Click the privacy dropdown next to the field
+  \item Select the desired privacy level
+  \item Changes are saved automatically
+\end{enumerate}
+
+
+\subsection{Profile Picture}
+
+\begin{enumerate}
+  \item Click on your current avatar or the camera icon
+  \item Select an image file from your device
+  \item The image will be uploaded and displayed as your profile picture
+\end{enumerate}
+
+\begin{tipbox}
+Supported formats include JPG, PNG, and GIF. Maximum file size is 2MB. The image is automatically resized for display.
+\end{tipbox}
+
+\subsection{Profile Viewers}
+
+The \textbf{Profile Viewers} section at the bottom of your profile shows who has viewed your profile.
+
+\begin{itemize}[leftmargin=*]
+  \item The header shows your total view count (e.g., ``12 total views'')
+  \item Each viewer entry shows: their name, headline, number of visits, and the date they last viewed
+  \item Click on a viewer's name to visit their profile
+  \item You can toggle viewer list visibility:
+    \begin{itemize}
+      \item \textbf{Visible} (default) --- your viewer list is shown; you can also appear in others' viewer lists
+      \item \textbf{Hidden} --- your viewer list is hidden; you also stop appearing in others' viewer lists
+    \end{itemize}
+  \item Toggle by clicking the \textbf{Visible/Hidden} button (a confirmation prompt will appear)
+\end{itemize}
+
+\screenshot{profile-viewers.png}{Profile Viewers section showing a list of viewers with visit counts and dates, and the visibility toggle button}
+
+
+% ============= 7. ENCRYPTION KEY MANAGEMENT =============
+\section{Encryption Key Management}
+
+VajraKavach uses \textbf{End-to-End Encryption (E2EE)} for all private messages. Each user has an \textbf{RSA-4096 key pair}:
+
+\begin{itemize}[leftmargin=*]
+  \item \textbf{Public Key} --- shared with others to encrypt messages to you; stored on the server
+  \item \textbf{Private Key} --- stored locally on your device (encrypted with your password); \textbf{never} sent to the server in plaintext
+\end{itemize}
+
+\subsection{How Keys are Managed}
+
+\begin{enumerate}
+  \item On first login, a key pair is \textbf{automatically generated} in your browser
+  \item The private key is encrypted with your account password and stored in your browser's IndexedDB
+  \item The public key is sent to the server so others can encrypt messages to you
+  \item When you close the browser tab, the in-memory (session) key is cleared
+  \item On next login, the key is decrypted from IndexedDB using your password
+\end{enumerate}
+
+\subsection{Exporting Your Key (Backup)}
+
+\begin{dangerbox}
+\textbf{You must export your key before using the platform on a different device!} Without your key backup, you will lose access to all previously encrypted messages.
+\end{dangerbox}
+
+\begin{enumerate}
+  \item Navigate to \textbf{Profile} or \textbf{Security} page
+  \item Find the \textbf{Encryption Keys} section
+  \item Click \textbf{Export Key Pair}
+  \item A \texttt{.vkkey} file will be downloaded to your device
+  \item Store this file securely (e.g., encrypted USB drive, password manager, or secure cloud storage)
+\end{enumerate}
+
+\subsection{Importing Your Key (New Device)}
+
+When you log in on a new device:
+
+\begin{enumerate}
+  \item You may see an automatic \textbf{Key Import Prompt}, or navigate to \textbf{Profile/Security $\rightarrow$ Encryption Keys}
+  \item Click \textbf{Import Key Pair}
+  \item Enter your \textbf{account password} (this is verified server-side for security)
+  \item Select your \texttt{.vkkey} backup file
+  \item Click \textbf{Confirm Import}
+  \item The page will reload and your old messages will become readable again
+\end{enumerate}
+
+\begin{warnbox}
+If you dismiss the key import prompt and continue with a new key, your old messages will be \textbf{permanently unreadable} on this device. Only import if you have your \texttt{.vkkey} file.
+\end{warnbox}
+
+\screenshot{key-export.png}{Key import/export buttons in the Encryption Keys section of the profile page}
+\screenshot{key-import.png}{Account password needed for importing Encryption Keys}
+
+
+% ============= 8. RESUME MANAGEMENT =============
+\section{Resume Management}
+
+\subsection{Uploading a Resume}
+
+\begin{enumerate}
+  \item Navigate to \textbf{Resume} from the navbar or dashboard
+  \item Click \textbf{Upload Resume}
+  \item Select a PDF or DOCX file from your device (maximum 10MB)
+  \item The file is \textbf{encrypted automatically} before being stored on the server
+  \item You will see a confirmation with the filename, upload date, and file size
+\end{enumerate}
+
+\begin{infobox}
+Your resume is encrypted at rest using Fernet (AES-128-CBC) encryption. Only you, authorized recruiters (to whom you apply), and admins can access it.
+\end{infobox}
+
+\screenshot{resume-upload.png}{Resume page showing the Upload Resume button and file selector}
+
+\subsection{Downloading Your Resume}
+
+Downloading your resume requires TOTP verification as a security measure:
+
+\begin{enumerate}
+  \item Navigate to \textbf{Resume}
+  \item Click \textbf{Download Resume}
+  \item Enter your 6-digit TOTP code using the \textbf{virtual keyboard}
+  \item Click \textbf{Verify and Download}
+  \item The resume will be decrypted server-side and downloaded to your device
+\end{enumerate}
+
+\begin{warnbox}
+The TOTP requirement for resume download prevents unauthorized access even if someone gains access to your logged-in session.
+\end{warnbox}
+
+\screenshot{resume-download-totp.png}{Resume download dialog showing the virtual keyboard for TOTP verification}
+
+\subsection{Updating Your Resume}
+
+To update your resume, click \textbf{``Replace with new resume''} on the resume card and select a new file. The previous version will be replaced.
+
+\subsection{Deleting Your Resume}
+
+To delete your resume:
+\begin{enumerate}
+  \item Click the \textbf{Delete} (trash) button on the resume card
+  \item Enter your \textbf{TOTP code} using the virtual keyboard
+  \item Confirm the deletion
+\end{enumerate}
+
+
+% ============= 9. JOBS =============
+\section{Jobs}
+
+\subsection{Browsing Jobs (All Roles)}
+
+\begin{enumerate}
+  \item Navigate to \textbf{Jobs} from the navbar
+  \item Browse the list of active job postings
+  \item Use the search and filter options:
+    \begin{itemize}
+      \item \textbf{Keyword search} --- search by title, location, or company name
+      \item \textbf{Company filter} --- filter by company name
+      \item \textbf{Location filter} --- filter by specific city or location text
+      \item \textbf{Skills filter} --- filter by required skills (e.g., ``Python, React'')
+      \item \textbf{Location Type} --- All, Remote, On-site, or Hybrid
+      \item \textbf{Job Type} --- All, Full Time, Part Time, Internship, or Contract
+    \end{itemize}
+  \item Click \textbf{Search} or toggle \textbf{Filters} to show/hide the advanced filter panel
+  \item Click \textbf{Clear Filters} to reset all filters
+\end{enumerate}
+
+\screenshot{jobs-browse.png}{Jobs page showing job listings with search bar and filter options}
+
+\subsection{Applying for a Job (User)}
+
+\begin{enumerate}
+  \item Click on a job listing to view details
+  \item Click the \textbf{Apply} button
+  \item You will be prompted to:
+    \begin{itemize}
+      \item Select your \textbf{uploaded resume} (if available)
+      \item Write a \textbf{cover letter / cover note}
+    \end{itemize}
+  \item Click \textbf{Submit Application}
+  \item Your application will appear under \textbf{Applications} (see Section~\ref{sec:applications})
+\end{enumerate}
+
+\begin{tipbox}
+Make sure you have uploaded your resume before applying. If you haven't uploaded one yet, navigate to the Resume section first.
+\end{tipbox}
+
+\screenshot{job-apply.png}{Job application form showing resume selection and cover letter text area}
+
+\subsection{Posting a Job (Recruiter)}
+\label{sec:postjob}
+
+Recruiters can post jobs under their company:
+
+\begin{enumerate}
+  \item Navigate to \textbf{Companies} $\rightarrow$ select your company $\rightarrow$ \textbf{Job Postings} tab
+  \item Click \textbf{Post New Job}
+  \item Fill in the job details:
+    \begin{itemize}
+      \item \textbf{Job Title} (required)
+      \item \textbf{Description} (required) --- detailed job description
+      \item \textbf{Required Skills} --- comma-separated skill tags
+      \item \textbf{Location} --- city name or leave empty for remote
+      \item \textbf{Currency} --- INR, USD, EUR, or GBP
+      \item \textbf{Min Salary} and \textbf{Max Salary} (optional)
+      \item \textbf{Job Type} --- Full Time, Part Time, Contract, or Internship
+      \item \textbf{Location Type} --- On-site, Remote, or Hybrid
+      \item \textbf{Application Deadline} (date picker, must be today or later)
+    \end{itemize}
+  \item Click \textbf{Post Job}
+  \item The job will be immediately visible to all users in the Jobs section
+\end{enumerate}
+
+\screenshot{job-post-form.png}{Job posting form with fields for title, description, skills, location, type, salary, and deadline}
+
+
+% ============= 10. APPLICATIONS =============
+\section{Applications}
+\label{sec:applications}
+
+\subsection{Tracking Your Applications (User)}
+
+\begin{enumerate}
+  \item Navigate to \textbf{Applications} from the navbar
+  \item View a list of all jobs you have applied to
+  \item Each application shows:
+    \begin{itemize}
+      \item \textbf{Job title} and \textbf{company name}
+      \item \textbf{Application date}
+      \item \textbf{Current status:} Applied, Reviewed, Interviewed, Rejected, or Offer
+    \end{itemize}
+  \item Click on an application for more details
+  \item You can \textbf{withdraw} an application if the status is still ``Applied''
+\end{enumerate}
+
+\screenshot{applications-user.png}{Applications page showing a list of job applications with status badges}
+
+\subsection{Managing Applicants (Recruiter)}
+
+Recruiters can manage applicants from the \textbf{Companies} section:
+
+\begin{enumerate}
+  \item Navigate to \textbf{Companies} $\rightarrow$ select your company
+  \item Go to the \textbf{Job Postings} tab
+  \item Click on a job posting to view applicants
+  \item For each applicant, you can:
+    \begin{itemize}
+      \item \textbf{View their profile} (name, headline, skills)
+      \item \textbf{Download their resume} (requires TOTP verification via virtual keyboard)
+      \item \textbf{Update application status} using the status dropdown:
+        \begin{itemize}
+          \item Applied $\rightarrow$ Reviewed $\rightarrow$ Interviewed $\rightarrow$ Offer / Rejected
+        \end{itemize}
+      \item \textbf{Add internal notes} about the candidate (click the Notes icon)
+      \item \textbf{Message the candidate} directly
+      \item \textbf{View Match Score} --- auto-compares the candidate's resume skills against the job requirements, showing matched/missing skills and a percentage score
+    \end{itemize}
+\end{enumerate}
+
+\screenshot{applications-recruiter.png}{Recruiter view showing applicants for a job with status dropdowns and action buttons}
+
+
+% ============= 11. COMPANIES =============
+\section{Companies}
+
+\subsection{Creating a Company Page (Recruiter)}
+
+\begin{enumerate}
+  \item Navigate to \textbf{Companies} from the navbar
+  \item Click the \textbf{My Companies} tab
+  \item Click \textbf{Create Company}
+  \item Fill in the company details:
+    \begin{itemize}
+      \item \textbf{Company Name} (required)
+      \item \textbf{Description} (required) --- about the company
+      \item \textbf{Location} (required) --- company headquarters
+      \item \textbf{Website} (required)
+      \item \textbf{Industry} (optional) --- e.g., Technology, Finance
+      \item \textbf{Size} (optional) --- e.g., 100--500 employees
+    \end{itemize}
+  \item Click \textbf{Create}
+  \item You are now the administrator of this company page
+\end{enumerate}
+
+\screenshot{company-create.png}{Create Company form with name, description, location, and website fields}
+
+\subsection{Browsing Companies (All Roles)}
+
+\begin{enumerate}
+  \item Navigate to \textbf{Companies}
+  \item Click the \textbf{Browse Companies} tab
+  \item Use the \textbf{search bar} to search by name or location
+  \item Use the \textbf{Industry} dropdown to filter by industry
+  \item Click the \textbf{Sort} button to toggle alphabetical sort (A$\rightarrow$Z / Z$\rightarrow$A)
+  \item Browse company cards showing name, industry badge, description, location, and website
+\end{enumerate}
+
+\screenshot{company-browse.png}{Browse Companies tab showing a grid of company cards with names and descriptions}
+
+\subsection{Managing Job Postings (Recruiter)}
+
+\begin{enumerate}
+  \item Navigate to \textbf{Companies}
+  \item Click the \textbf{My Job Postings} tab
+  \item This shows \textbf{all jobs posted by you} across all your companies
+  \item Here you can:
+    \begin{itemize}
+      \item View all your job listings with company name, status, and applicant count
+      \item \textbf{Edit} a job listing (click the Edit icon to modify title, description, skills, salary, etc.)
+      \item \textbf{Delete} a job listing (with confirmation dialog)
+      \item Toggle job status (active/closed via the Active checkbox in the edit form)
+      \item View and manage applicants --- click the expand arrow to see all applicants for a job (see Section~\ref{sec:applications})
+    \end{itemize}
+  \item To post a new job, go to the \textbf{My Companies} tab, expand your company card, and click \textbf{``Post a Job''} (see Section~\ref{sec:postjob})
+\end{enumerate}
+
+\screenshot{company-job-postings.png}{My Job Postings tab showing all job listings posted by the recruiter}
+
+
+% ============= 12. CONNECTIONS =============
+\section{Connections}
+
+\subsection{Finding People}
+
+\begin{enumerate}
+  \item Navigate to \textbf{Connections} from the navbar
+  \item Click the \textbf{Find People} tab
+  \item Browse platform users or search by name
+  \item Click \textbf{Connect} next to a user to send a connection request
+\end{enumerate}
+
+\screenshot{connections-find.png}{Find People tab showing user cards with Connect buttons}
+
+\subsection{Managing Connection Requests}
+
+Connections are managed through multiple tabs:
+
+\begin{longtable}{p{3.5cm}p{9.5cm}}
+\toprule
+\textbf{Tab} & \textbf{Description} \\
+\midrule
+\textbf{Connections} & View all accepted connections. Click a user to view their profile. \\
+\textbf{Pending} & Incoming connection requests from others. Accept or decline. \\
+\textbf{Sent Requests} & Outgoing requests you have sent. Cancel if needed. \\
+\textbf{Find People} & Discover new users and send connection requests. \\
+\textbf{Network} & Visualize your connection graph interactively. \\
+\bottomrule
+\end{longtable}
+
+\subsection{Connection Graph}
+
+The \textbf{Network} tab provides an interactive force-directed graph visualization of your professional network:
+
+\begin{itemize}[leftmargin=*]
+  \item Your profile appears as a larger node at the center labeled ``You''
+  \item Direct connections are shown as linked nodes (sized by their connection count)
+  \item \textbf{Solid lines} represent direct connections; \textbf{dashed green lines} indicate mutual connections
+  \item \textbf{Green badges} on edges show the number of mutual connections
+  \item Hover over a node to see the user's name, role (Recruiter/Job Seeker), and mutual count in a tooltip below the graph
+  \item Click on a node to navigate to that user's profile
+  \item A \textbf{legend} at the bottom explains the node colors and line styles
+\end{itemize}
+
+\screenshot{connections-graph.png}{Interactive network graph visualization showing the user at center with connected nodes}
+
+
+% ============= 13. MESSAGING =============
+\section{Messaging (End-to-End Encrypted)}
+
+\subsection{Overview}
+
+All messages on VajraKavach are \textbf{End-to-End Encrypted (E2EE)}. This means:
+
+\begin{itemize}[leftmargin=*]
+  \item Messages are encrypted in your browser before being sent
+  \item The server stores only \textbf{ciphertext} --- it cannot read your messages
+  \item Only the sender and recipient(s) can decrypt and read the messages
+\end{itemize}
+
+\begin{infobox}
+For E2EE to work, both you and the recipient must have valid encryption keys. If you see a warning saying ``keys unavailable,'' export/import your keys from the Profile or Security section.
+\end{infobox}
+
+\subsection{Sending a Direct Message}
+
+\begin{enumerate}
+  \item Navigate to \textbf{Messages} from the navbar
+  \item Click the \textbf{+} button next to ``Conversations'' to open the New Conversation dialog
+  \item The dialog shows your connections who don't have an existing conversation yet --- click on a user to start a DM
+  \item Alternatively, select an existing conversation from the sidebar
+  \item Type your message in the input field at the bottom
+  \item Click \textbf{Send} (or press Enter)
+  \item The message is encrypted with the recipient's public key and your own public key (so both of you can read it)
+\end{enumerate}
+
+\begin{infobox}
+You can also start a conversation from other pages (e.g., clicking the Message icon on a connection's profile or on an applicant card). This redirects to the Messages page with the conversation pre-selected.
+\end{infobox}
+
+\screenshot{messages-dm.png}{Direct message conversation showing encrypted messages between two users}
+
+\subsection{Group Messages}
+
+\begin{enumerate}
+  \item In the Messages section, click the \textbf{+} button next to ``Conversations''
+  \item Click \textbf{Create Group Chat}
+  \item Enter a \textbf{group name}
+  \item Select members from your connections (checkboxes)
+  \item Click \textbf{Create Group}
+  \item Messages in groups are individually encrypted for each member
+\end{enumerate}
+
+\subsubsection{Group Management}
+
+The group creator has additional controls:
+
+\begin{itemize}[leftmargin=*]
+  \item \textbf{Info} --- click the Info button in the chat header to see group details and members
+  \item \textbf{Add Members} --- add new connections to the group
+  \item \textbf{Remove Members} --- remove a member from the group
+  \item \textbf{Delete Group} --- archive the group (no new messages can be sent)
+\end{itemize}
+
+Non-creator members can:
+\begin{itemize}[leftmargin=*]
+  \item \textbf{Leave} the group (you can still view old messages but cannot send new ones)
+  \item \textbf{Delete} the group from your view
+\end{itemize}
+
+\begin{tipbox}
+Group messages are encrypted separately for each member using their individual public keys. This ensures true E2EE even in group chats.
+\end{tipbox}
+
+\screenshot{messages-group.png}{Group chat showing multiple participants and encrypted messages}
+
+\subsection{Message Encryption Indicators}
+
+In the message view:
+\begin{itemize}[leftmargin=*]
+  \item Encrypted messages are displayed as normal readable text (decrypted in your browser)
+  \item If a message cannot be decrypted (e.g., wrong key), it will display as \textit{``[Encrypted --- unable to decrypt]''} in yellow italic
+  \item A \textbf{lock icon} next to the timestamp indicates E2EE is active
+  \item For direct messages, the chat header displays \textbf{``End-to-end encrypted''}
+\end{itemize}
+
+\subsection{Deleting Messages}
+
+\begin{itemize}[leftmargin=*]
+  \item Hover over any message to reveal a \textbf{Delete} (trash) icon
+  \item For your own messages, you can choose:
+    \begin{itemize}
+      \item \textbf{Delete for me} --- removes the message from your view only
+      \item \textbf{Delete for everyone} --- removes the message for all participants
+    \end{itemize}
+  \item For others' messages, only \textbf{Delete for me} is available
+  \item Deleted messages show as \textit{``This message was deleted''} with a dashed border
+\end{itemize}
+
+\subsection{Messaging from Other Pages}
+
+You can also start a message from:
+\begin{itemize}[leftmargin=*]
+  \item \textbf{ViewProfile page} --- click the \textbf{Message} button on a connected user's profile
+\end{itemize}
+
+
+% ============= 14. VIEWING OTHER PROFILES =============
+\section{Viewing Other Users' Profiles}
+
+\begin{enumerate}
+  \item Click on any user's name elsewhere on the platform (connections, applicants, admin panel, etc.)
+  \item You will see their \textbf{public profile} with:
+    \begin{itemize}
+      \item Name, headline, location, email, website (subject to their privacy settings)
+      \item About / Bio section
+      \item Skills (as tag pills)
+      \item Education and experience (if visible)
+    \end{itemize}
+  \item Available actions (depending on connection status):
+    \begin{itemize}
+      \item \textbf{Connect} --- send a connection request (if not connected)
+      \item \textbf{Message} --- start an encrypted conversation (if already connected)
+      \item If a request is pending, you will see a \textbf{``Request Pending''} badge
+    \end{itemize}
+\end{enumerate}
+
+\screenshot{view-profile.png}{Read-only profile view of another user with Connect and Message buttons}
+
+
+% ============= 15. SECURITY SETTINGS =============
+\section{Security Settings}
+
+Navigate to \textbf{Security} from the navbar to access security-related account actions.
+
+At the top, a \textbf{Security Status} banner shows three green indicators:
+\begin{itemize}[leftmargin=*]
+  \item \textbf{TOTP Active} --- your two-factor authentication is enabled
+  \item \textbf{E2E Encryption} --- end-to-end encryption is active
+  \item \textbf{PKI Verified} --- your public key infrastructure is set up
+\end{itemize}
+
+\subsection{Changing Your Password}
+
+\begin{enumerate}
+  \item On the Security page, find the \textbf{Change Password} section
+  \item Enter your \textbf{current password}
+  \item Enter your \textbf{new password} (8--72 characters, must include uppercase, lowercase, digit, and special character); a \textbf{password strength bar} with a checklist is shown
+  \item Confirm your new password
+  \item Enter your \textbf{TOTP code} using the virtual keyboard
+  \item Click \textbf{Change Password}
+\end{enumerate}
+
+\begin{warnbox}
+After changing your password, you will need to re-import your encryption key (\texttt{.vkkey} file) since the key is encrypted with your password.
+\end{warnbox}
+
+\screenshot{security-change-password.png}{Change Password form with current password, new password, confirm, and TOTP fields}
+
+\subsection{Deleting Your Account}
+
+\begin{dangerbox}
+Account deletion is \textbf{permanent and irreversible}. All your data, messages, applications, and uploaded files will be permanently removed.
+\end{dangerbox}
+
+\begin{enumerate}
+  \item On the Security page, find the \textbf{Delete Account} section (in the red-bordered ``Danger Zone'')
+  \item Type the confirmation phrase \textbf{\texttt{DELETE MY ACCOUNT}} exactly as shown
+  \item Enter your \textbf{TOTP code} using the virtual keyboard
+  \item Click \textbf{Delete My Account Permanently}
+  \item You will be logged out and your account will be permanently deleted
+\end{enumerate}
+
+\subsection{Account Information}
+
+The Security page also displays your \textbf{Account Information} in a read-only card:
+
+\begin{itemize}[leftmargin=*]
+  \item \textbf{Email} --- your registered email address
+  \item \textbf{Role} --- your current role (User, Recruiter, Admin)
+  \item \textbf{TOTP} --- verification status (``Verified'')
+  \item \textbf{Status} --- account status (``Active'')
+\end{itemize}
+
+\screenshot{security-delete-account.png}{Delete Account section with confirmation text input and TOTP virtual keyboard}
+
+
+% ============= 16. ADMIN DASHBOARD =============
+\section{Admin Dashboard}
+\label{sec:admin}
+
+The Admin Dashboard is available to users with the \textbf{Admin} role. Access it via the \textbf{Admin Panel} link in the navbar.
+
+\subsection{TOTP Verification Gate}
+
+Before accessing the Admin Dashboard, you must verify your identity with TOTP:
+
+\begin{enumerate}
+  \item Enter your 6-digit TOTP code using the virtual keyboard
+  \item Click \textbf{Verify \& Access}
+  \item Once verified, the full admin dashboard loads
+\end{enumerate}
+
+\screenshot{admin-totp-gate.png}{Admin TOTP verification screen with virtual keyboard before accessing the dashboard}
+
+\begin{warnbox}
+The Admin role you select during registration provides \textbf{view-only access} to the admin dashboard. You can see all data (users, jobs, resumes, audit logs, reports, blockchain) but \textbf{cannot take any actions} such as suspending users, delisting jobs, creating announcements, mining blocks, or resolving reports. Those write actions are reserved for the Platform Admin (super admin), which is a role assigned internally and not available through registration. The dashboard header will display \textbf{``Admin Dashboard (View Only)''} to indicate this.
+\end{warnbox}
+
+\subsection{Overview Tab}
+
+The Overview tab provides aggregate platform statistics displayed as colored cards:
+
+\begin{itemize}[leftmargin=*]
+  \item \textbf{Total Users} --- total registered users on the platform
+  \item \textbf{Active Users} --- users with active accounts
+  \item \textbf{Suspended} --- users who have been suspended
+  \item \textbf{Total Jobs} --- total job postings
+  \item \textbf{Audit Logs} --- total audit log entries
+\end{itemize}
+
+\screenshot{admin-overview.png}{Admin dashboard overview showing aggregate statistics as cards and charts}
+
+\subsection{User Management}
+
+\begin{enumerate}
+  \item Click the \textbf{Users} tab
+  \item View a paginated table of all registered users with:
+    \begin{itemize}
+      \item Name, email, role, status (active/suspended)
+      \item Last login IP address
+      \item Registration date
+    \end{itemize}
+  \item \textbf{Search} for users by name or email
+\end{enumerate}
+
+\begin{infobox}
+As an Admin (view-only), you can browse and search all users but cannot suspend, activate, delete, or change roles. Action buttons (Suspend, Delete, Promote) are only visible to Platform Admins.
+\end{infobox}
+
+\screenshot{admin-users.png}{Admin Users tab showing a table of users with columns for name, email, role, status, and actions}
+
+\subsection{Job Moderation}
+
+\begin{enumerate}
+  \item Click the \textbf{Jobs} tab
+  \item View all job postings across the platform
+  \item Each listing shows: title, company name, location, type, active status, and creation date
+\end{enumerate}
+
+\begin{infobox}
+As an Admin (view-only), you can browse all job listings but cannot delist or modify them. The delist toggle button is only visible to Platform Admins.
+\end{infobox}
+
+\screenshot{admin-jobs.png}{Admin Jobs tab showing job listings with delist action buttons}
+
+\subsection{Resume Overview}
+
+\begin{enumerate}
+  \item Click the \textbf{Resumes} tab
+  \item View metadata of all uploaded resumes (file name, upload date, owner)
+  \item Admins can download resumes by verifying their TOTP token; the file is decrypted server-side upon authorised download
+\end{enumerate}
+
+\subsection{Announcements}
+
+\begin{enumerate}
+  \item Click the \textbf{Announcements} tab
+  \item View all platform-wide announcements
+\end{enumerate}
+
+\begin{infobox}
+As an Admin (view-only), you can view existing announcements but cannot create or delete them. The announcement creation form is only visible to Platform Admins.
+\end{infobox}
+
+\subsection{User Reports}
+
+\begin{enumerate}
+  \item Click the \textbf{Reports} tab
+  \item View all abuse reports submitted by users
+  \item Each report includes:
+    \begin{itemize}
+      \item Reporter information
+      \item Reported user
+      \item Category (Spam, Harassment, Fraud, etc.)
+      \item Description
+      \item Timestamp
+    \end{itemize}
+  \item Take appropriate moderation action based on reports
+\end{enumerate}
+
+\begin{infobox}
+As an Admin (view-only), you can view all reports but cannot change their status (mark as reviewed/resolved). Status update buttons are only visible to Platform Admins.
+\end{infobox}
+
+\screenshot{admin-reports.png}{Admin Reports tab showing a list of user reports with categories and descriptions}
+
+\subsection{Audit Logs}
+
+\begin{enumerate}
+  \item Click the \textbf{Audit Logs} tab
+  \item View a paginated history of all security-relevant actions:
+    \begin{itemize}
+      \item User logins, registrations, and TOTP verifications
+      \item Profile updates and account changes
+      \item Resume uploads, downloads, and deletions
+      \item Message sends and group creation
+      \item Connection requests
+      \item Job/company creation, updates, and deletions
+      \item Application submissions and status changes
+      \item Admin actions (user suspend/activate, job moderation)
+      \item Blockchain mining events
+      \item E2EE key uploads
+    \end{itemize}
+  \item Each log entry shows a \textbf{Valid} or \textbf{Tampered} integrity badge, automatically verified via hash chaining
+  \item Use the \textbf{Previous / Next} buttons to paginate through entries
+\end{enumerate}
+
+\begin{infobox}
+Audit logs use \textbf{hash chaining} --- each log entry includes a SHA-256 hash of the previous entry. This makes tampering detectable, as modifying any entry would break the chain.
+\end{infobox}
+
+\screenshot{admin-audit-logs.png}{Audit Logs tab showing log entries with timestamps, actions, users, and hash chain verification button}
+
+\subsection{Blockchain Verification}
+
+The platform includes optional blockchain-based tamper-evidence:
+
+\begin{enumerate}
+  \item In the Audit Logs section, click \textbf{Blockchain} sub-tab
+  \item Click \textbf{Verify Blockchain} to verify the integrity of all mined blocks
+  \item View individual blocks with their Merkle roots and hash pointers
+\end{enumerate}
+
+\begin{infobox}
+As an Admin (view-only), you can view blockchain blocks and verify their integrity, but cannot mine new blocks. The \textbf{Mine Block} button is only visible to Platform Admins.
+\end{infobox}
+
+\screenshot{admin-blockchain.png}{Blockchain verification page showing mined blocks with hashes and verification status}
+
+
+% ============= 17. REPORTING USERS =============
+\section{Reporting Users}
+\label{sec:report}
+
+If you encounter inappropriate behavior, you can report a user:
+
+\begin{enumerate}
+  \item In a \textbf{direct message conversation}, click the \textbf{Report} button (flag icon) in the chat header
+  \item In the report dialog:
+    \begin{itemize}
+      \item Select a \textbf{Category}: Spam, Harassment, Fraud/Scam, Inappropriate Content, Impersonation, or Other
+      \item Provide a \textbf{Description} of the issue (5--2000 characters)
+    \end{itemize}
+  \item Click \textbf{Submit Report}
+  \item The report is sent to platform admins for review
+\end{enumerate}
+
+\screenshot{report-dialog.png}{Report dialog with category dropdown and description textarea}
+
+
+% ============= 18. TROUBLESHOOTING =============
+\section{Troubleshooting}
+
+\begin{longtable}{p{5cm}p{8.5cm}}
+\toprule
+\textbf{Issue} & \textbf{Solution} \\
+\midrule
+Browser shows ``Your connection is not private'' & Install the rootCA.pem certificate (see Section~\ref{sec:cert-install}) \\
+\midrule
+TOTP code not working & Ensure your phone's clock is synced (use automatic time). TOTP is time-based and requires accurate clocks. Wait for a fresh code. \\
+\midrule
+Cannot read old messages on new device & Import your \texttt{.vkkey} file from your old device. Without it, old messages encrypted with your old key pair cannot be decrypted. \\
+\midrule
+``Keys unavailable'' warning in Messages & Go to Profile $\rightarrow$ Encryption Keys $\rightarrow$ Export/Import your key pair. \\
+\midrule
+Resume download fails & Ensure you enter the correct TOTP code. If the issue persists, try uploading a new resume. \\
+\midrule
+Account locked after failed TOTP attempts & After 3 failed attempts within 5 minutes your IP is locked out for 60 minutes. Subsequent lockouts escalate progressively ($\times$5 each time: 300~min, 1500~min, etc.). Wait for the lockout to expire and ensure you are using the correct TOTP code. \\
+\midrule
+Cannot connect to \texttt{192.168.3.44} & Ensure you are on the same LAN. The platform is not accessible from the public internet. \\
+\midrule
+Page not loading after login & Clear your browser cache and cookies, then log in again. \\
+\midrule
+Forgot password \& lost TOTP & Contact a platform administrator --- account recovery without TOTP requires manual intervention. \\
+\bottomrule
+\end{longtable}
+
+
+% ============= 19. SECURITY BEST PRACTICES =============
+\section{Security Best Practices}
+
+Follow these recommendations to keep your account secure:
+
+\begin{enumerate}[leftmargin=*]
+  \item \textbf{Use a strong, unique password} --- do not reuse passwords from other sites
+  \item \textbf{Back up your TOTP secret} --- use an authenticator app that supports cloud backup, or save the setup QR code securely
+  \item \textbf{Export your encryption key} --- save your \texttt{.vkkey} file immediately after first login; store it securely
+  \item \textbf{Never share your \texttt{.vkkey} file} --- anyone with this file and your password can read your messages
+  \item \textbf{Log out when done} --- especially on shared or public computers
+  \item \textbf{Verify the URL} --- always ensure you are on \texttt{https://192.168.3.44} with the padlock icon
+  \item \textbf{Keep your authenticator app updated} --- update your phone's OS and authenticator app regularly
+  \item \textbf{Report suspicious activity} --- if you notice unauthorized access or suspicious users, use the report feature
+  \item \textbf{Check your IP address} --- the greeting bar shows your session IP; verify it matches your expected location
+\end{enumerate}
+
+
+% ============= APPENDIX =============
+\appendix
+
+\section{Quick Reference Card}
+
+\begin{longtable}{p{4cm}p{4cm}p{5.5cm}}
+\toprule
+\textbf{Action} & \textbf{Navigation Path} & \textbf{Notes} \\
+\midrule
+Register & Landing Page $\rightarrow$ Get Started & Requires TOTP setup \\
+Login & Landing Page $\rightarrow$ Sign In & Email + Password, then TOTP on next page \\
+Reset Password & Login $\rightarrow$ Forgot Password & Requires TOTP \\
+Edit Profile & Navbar $\rightarrow$ Profile & Click Edit on each section \\
+Upload Resume & Navbar $\rightarrow$ Resume & PDF or DOCX format \\
+Download Resume & Navbar $\rightarrow$ Resume & Requires TOTP \\
+Search Jobs & Navbar $\rightarrow$ Jobs & Use filters for better results \\
+Apply for Job & Jobs $\rightarrow$ Apply Now & Resume optional \\
+Track Applications & Navbar $\rightarrow$ Applications & View status updates \\
+Create Company & Navbar $\rightarrow$ Companies $\rightarrow$ Create & Recruiter only; page visible to all \\
+Post Job & Companies $\rightarrow$ My Company $\rightarrow$ Post & Recruiter only \\
+View Applicants & Companies $\rightarrow$ Job $\rightarrow$ Applicants & Recruiter only \\
+Send Message & Navbar $\rightarrow$ Messages & E2EE encrypted \\
+Find People & Navbar $\rightarrow$ Connections & Send connection requests \\
+Export Keys & Profile $\rightarrow$ Encryption Keys & Save \texttt{.vkkey} file \\
+Import Keys & Profile $\rightarrow$ Encryption Keys & Needs password + file \\
+Change Password & Navbar $\rightarrow$ Security & Requires current PW + TOTP \\
+Delete Account & Navbar $\rightarrow$ Security & Irreversible, requires TOTP \\
+Admin Panel & Navbar $\rightarrow$ Admin Panel & Admin or Platform Admin role only \\
+Report User & Messages $\rightarrow$ DM $\rightarrow$ Flag Icon & Select category + describe \\
+\bottomrule
+\end{longtable}
+
+\section{Keyboard Shortcuts}
+
+\begin{longtable}{p{4cm}p{9.5cm}}
+\toprule
+\textbf{Shortcut} & \textbf{Action} \\
+\midrule
+\texttt{Enter} & Send message (in Messages page) \\
+\texttt{Enter} & Execute search (in Jobs and Connections pages) \\
+\bottomrule
+\end{longtable}
+
+\section{Glossary}
+
+\begin{longtable}{p{4cm}p{9.5cm}}
+\toprule
+\textbf{Term} & \textbf{Definition} \\
+\midrule
+\textbf{TOTP} & Time-based One-Time Password --- a 6-digit code generated by your authenticator app that refreshes every 30 seconds; the server accepts each code for approximately 90 seconds (current $\pm$ 1 time-step) \\
+\textbf{E2EE} & End-to-End Encryption --- messages are encrypted on your device and only decryptable by the intended recipient \\
+\textbf{RSA-4096} & A 4096-bit asymmetric encryption algorithm used for key wrapping (RSA-OAEP), message signing (RSA-PSS), and resume digital signatures (PKCS1v15) \\
+\textbf{AES-256-GCM} & A symmetric authenticated encryption algorithm used for encrypting message content \\
+\textbf{PKI} & Public Key Infrastructure --- a framework for managing digital certificates and encryption keys \\
+\textbf{.vkkey} & VajraKavach Key file --- a JSON file containing your RSA key pair for E2EE backup/transfer \\
+\textbf{Virtual Keyboard} & An on-screen keyboard with randomized digit positions to prevent keylogger attacks \\
+\textbf{Fernet} & A symmetric encryption scheme (AES-128-CBC + HMAC-SHA256) used for encrypting resumes at rest \\
+\textbf{Hash Chain} & A sequence of log entries where each entry's hash includes the previous entry's hash, creating tamper-evidence \\
+\textbf{Argon2id} & A memory-hard password hashing algorithm resistant to GPU and ASIC-based cracking \\
+\bottomrule
+\end{longtable}
+
+
+\end{document}

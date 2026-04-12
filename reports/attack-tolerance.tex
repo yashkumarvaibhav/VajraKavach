@@ -1,0 +1,282 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{longtable}
+\usepackage{enumitem}
+\usepackage{fancyhdr}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{tcolorbox}
+\usepackage{amssymb}
+
+\definecolor{headerblue}{HTML}{1E40AF}
+\definecolor{shieldgreen}{HTML}{166534}
+\definecolor{toleranceamber}{HTML}{B45309}
+
+\hypersetup{colorlinks=true,linkcolor=headerblue,urlcolor=headerblue}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\textbf{VajraKavach — Attack Tolerance Report}}
+\fancyhead[R]{\small\textbf{CONFIDENTIAL}}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.5pt}
+
+\title{
+  \vspace{-1cm}
+  \textbf{\Huge VajraKavach}\\[0.3cm]
+  \textbf{\Large Attack Tolerance Report}\\[0.3cm]
+  \large Continuing to Operate Under Active Attack\\[0.8cm]
+  \normalsize
+  \begin{tabular}{ll}
+    \textbf{Report Date:} & April 7, 2026 \\
+    \textbf{Classification:} & CONFIDENTIAL \\
+    \textbf{Prepared By:} & VajraKavach Security Team \\
+    \textbf{Platform:} & Secure Job Search \& Professional Networking \\
+    \textbf{Target:} & \texttt{https://192.168.3.44} \\
+    \textbf{Course:} & CSE 345/545, IIIT-Delhi \\
+  \end{tabular}
+}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+\thispagestyle{fancy}
+
+\newpage
+\tableofcontents
+\newpage
+
+% ================================================================
+\section{Executive Summary}
+% ================================================================
+
+Attack tolerance refers to the system's ability to \textbf{continue serving legitimate users while under active attack}. Unlike mitigation (which prevents attacks) or recovery (which restores service after attacks), tolerance ensures that a successful or ongoing attack against one component does not cause a complete service outage.
+
+VajraKavach implements \textbf{10 distinct tolerance mechanisms} that bound the impact of attacks, limit attacker resource consumption, and maintain service availability for legitimate users throughout an attack scenario.
+
+% ================================================================
+\section{Resource Bounding}
+% ================================================================
+
+\subsection{Memory Ceiling}
+
+\begin{tcolorbox}[colback=toleranceamber!5, colframe=toleranceamber]
+\textbf{Mechanism:} \texttt{MemoryMax=2G} in systemd service configuration.\\
+\textbf{Location:} \texttt{/etc/systemd/system/vajrakavach-backend.service}\\
+\textbf{Attack Scenario:} An attacker sends requests designed to consume excessive memory (large payloads, many concurrent sessions, memory-intensive operations like blockchain mining).\\
+\textbf{Behavior Under Attack:} If the backend process exceeds 2 GB of memory, systemd's cgroup controller kills it via \texttt{SIGKILL}. The service is then automatically restarted within 3 seconds (see Recovery report). During the restart, Nginx returns 502 Bad Gateway — but the \textbf{host system remains stable} and other services (PostgreSQL, Nginx, SSH) are unaffected.\\
+\textbf{Impact Containment:} The attacker cannot exhaust host memory or trigger the OOM killer against other processes.
+\end{tcolorbox}
+
+\subsection{CPU Quota}
+
+\begin{tcolorbox}[colback=toleranceamber!5, colframe=toleranceamber]
+\textbf{Mechanism:} \texttt{CPUQuota=80\%} in systemd service configuration.\\
+\textbf{Location:} \texttt{/etc/systemd/system/vajrakavach-backend.service}\\
+\textbf{Attack Scenario:} CPU-intensive attacks such as triggering many blockchain proof-of-work computations, Argon2 password hashing, or cryptographic operations.\\
+\textbf{Behavior Under Attack:} The backend process is throttled by the Linux CFS scheduler to use at most 80\% of one CPU core. The remaining 20\% is guaranteed available for system services, SSH access, and monitoring.\\
+\textbf{Impact Containment:} System administrators can always SSH in and investigate, even during a CPU exhaustion attack.
+\end{tcolorbox}
+
+\subsection{File Descriptor Limit}
+
+\begin{tcolorbox}[colback=toleranceamber!5, colframe=toleranceamber]
+\textbf{Mechanism:} \texttt{LimitNOFILE=65536} in systemd service configuration.\\
+\textbf{Location:} \texttt{/etc/systemd/system/vajrakavach-backend.service}\\
+\textbf{Purpose:} Allows the backend to handle a large number of concurrent connections (WebSocket, database, file operations) while preventing file descriptor exhaustion attacks from affecting the system. The limit is generous enough for normal operation but caps runaway resource consumption.
+\end{tcolorbox}
+
+% ================================================================
+\section{Traffic Shaping Under Attack}
+% ================================================================
+
+\subsection{Dual-Layer Rate Limiting}
+
+\begin{tcolorbox}[colback=toleranceamber!5, colframe=toleranceamber]
+\textbf{Mechanism:} Rate limiting at both Nginx (kernel-level) and FastAPI (application-level).\\
+\textbf{Attack Scenario:} Brute-force login attempts, credential stuffing, API flooding.\\
+\textbf{Behavior Under Attack:}
+\begin{enumerate}[nosep]
+  \item \textbf{Nginx layer (first line):} Rejects excess requests with HTTP 429 before they reach the Python process. This is extremely efficient — the request never enters userspace processing.
+  \item \textbf{FastAPI layer (second line):} Catches requests that bypass Nginx limits (e.g., from localhost). Provides endpoint-specific granularity.
+\end{enumerate}
+\textbf{Why both layers matter:} Nginx handles the volumetric aspect (raw request count), while the application layer handles semantic rate limiting (specific endpoint patterns). An attacker cannot bypass one without hitting the other.
+
+\textbf{Legitimate user impact:} Rate limits are per-IP. An attacker flooding from one IP address does \textbf{not} affect users on other IP addresses. Legitimate users experience zero degradation during a single-source flooding attack.
+\end{tcolorbox}
+
+\subsection{Connection Throttling}
+
+\begin{tcolorbox}[colback=toleranceamber!5, colframe=toleranceamber]
+\textbf{Mechanism:} 15 concurrent connections per IP via Nginx \texttt{limit\_conn}.\\
+\textbf{Attack Scenario:} Slowloris attacks, connection pool exhaustion, SYN flooding.\\
+\textbf{Behavior Under Attack:} After 15 connections from one IP, additional connection attempts are rejected immediately. This prevents a single attacker from monopolizing server resources. With Nginx's efficient connection handling, the server can maintain thousands of connections to legitimate users while rejecting excess connections from an attacker.\\
+\textbf{Impact Containment:} Each attacker IP is bounded to 15 connections — far below the server's capacity.
+\end{tcolorbox}
+
+\subsection{HTTP 444 on Plain HTTP}
+
+\begin{tcolorbox}[colback=toleranceamber!5, colframe=toleranceamber]
+\textbf{Mechanism:} Port 80 returns HTTP 444 (close connection immediately).\\
+\textbf{Location:} \texttt{nginx/nginx.conf}\\
+\textbf{Attack Scenario:} Automated scanners, bots, and reconnaissance tools probing port 80.\\
+\textbf{Behavior Under Attack:} The TCP connection is closed without any response body. No server resources are spent generating error pages or redirect responses. This is the most resource-efficient way to handle unwanted traffic.\\
+\textbf{Impact Containment:} Zero CPU/memory cost per rejected connection.
+\end{tcolorbox}
+
+% ================================================================
+\section{Progressive Degradation}
+% ================================================================
+
+\subsection{Progressive Lockout}
+
+\begin{tcolorbox}[colback=toleranceamber!5, colframe=toleranceamber]
+\textbf{Mechanism:} Exponentially increasing lockout for failed TOTP attempts.\\
+\textbf{Location:} \texttt{backend/app/services/totp\_service.py}\\
+\textbf{Attack Scenario:} TOTP brute-force attack (an attacker who has obtained the password and is trying to guess the 6-digit TOTP code).\\
+\textbf{Behavior Under Attack:}
+\begin{center}
+\begin{tabular}{ccc}
+\toprule
+\textbf{Lockout Level} & \textbf{Duration} & \textbf{Cumulative Wait} \\
+\midrule
+1st lockout & 60 minutes & 1 hour \\
+2nd lockout & 300 minutes & 6 hours \\
+3rd lockout & 1,500 minutes & 31 hours \\
+4th lockout & 7,500 minutes & 156 hours \\
+\bottomrule
+\end{tabular}
+\end{center}
+\textbf{Key design decision:} Lockout is keyed by \textbf{IP address}, not email. This prevents an attacker from locking out a legitimate user by sending failed attempts against their email. The legitimate user can still log in from a different IP address.
+
+\textbf{Impact on legitimate users:} Zero — lockout only affects the attacking IP.
+\end{tcolorbox}
+
+\subsection{Graceful Error Responses}
+
+\begin{tcolorbox}[colback=toleranceamber!5, colframe=toleranceamber]
+\textbf{Mechanism:} Structured error responses with retry guidance.\\
+\textbf{Behavior Under Attack:}
+\begin{itemize}[nosep]
+  \item Rate-limited clients receive HTTP 429 with message: \texttt{"Rate limit exceeded. Please try again later."}
+  \item Auth-locked IPs receive HTTP 403 with lockout details
+  \item Health endpoint (\texttt{/api/health}) always returns 200 regardless of attack state
+  \item Frontend retry logic handles 429/503 with 3-second automatic backoff
+\end{itemize}
+\textbf{Purpose:} Legitimate clients can detect rate limiting and retry appropriately. The system never crashes or returns opaque 500 errors during attack handling.
+\end{tcolorbox}
+
+% ================================================================
+\section{Isolation \& Independence}
+% ================================================================
+
+\subsection{Database Connection Pooling}
+
+\begin{tcolorbox}[colback=toleranceamber!5, colframe=toleranceamber]
+\textbf{Mechanism:} SQLAlchemy async connection pool with bounded size.\\
+\textbf{Location:} \texttt{backend/app/database.py}\\
+\textbf{Configuration:}
+\begin{verbatim}
+pool_size=10, max_overflow=5, pool_pre_ping=True
+\end{verbatim}
+\textbf{Attack Scenario:} An attacker triggers many database-heavy operations to exhaust connections.\\
+\textbf{Behavior Under Attack:} The pool limits concurrent database connections to 15 (10 base + 5 overflow). Excess requests queue and eventually timeout rather than crashing. \texttt{pool\_pre\_ping=True} validates connections before use, handling stale connections from database restarts.\\
+\textbf{Impact Containment:} PostgreSQL is never overwhelmed by connection storms.
+\end{tcolorbox}
+
+\subsection{WebSocket Connection Isolation}
+
+\begin{tcolorbox}[colback=toleranceamber!5, colframe=toleranceamber]
+\textbf{Mechanism:} Independent authentication and lifecycle for each WebSocket connection.\\
+\textbf{Location:} \texttt{backend/app/routes/websocket.py}\\
+\textbf{Features:}
+\begin{itemize}[nosep]
+  \item Each connection is independently authenticated via JWT
+  \item Dead connections are automatically cleaned up and discarded
+  \item Connection registry uses asyncio lock for thread safety
+  \item A compromised or malicious connection cannot affect other users' connections
+  \item Connections are organized per-user with set-based storage (efficient add/remove)
+\end{itemize}
+\textbf{Attack Scenario:} An attacker opens many WebSocket connections to exhaust resources.\\
+\textbf{Behavior Under Attack:} Each connection requires valid JWT authentication. Invalid tokens are rejected at connection time (close code 4001/4003). The per-IP connection limit of 15 (Nginx) bounds the maximum connections from one attacker.
+\end{tcolorbox}
+
+\subsection{Async Architecture}
+
+\begin{tcolorbox}[colback=toleranceamber!5, colframe=toleranceamber]
+\textbf{Mechanism:} FastAPI with Python asyncio event loop.\\
+\textbf{Purpose:} All I/O operations (database queries, WebSocket communication, file operations) are non-blocking. A slow request (e.g., blockchain mining, large file encryption) does not block the event loop or prevent other requests from being processed.\\
+\textbf{Attack Scenario:} An attacker sends requests that trigger slow operations (complex queries, large file processing).\\
+\textbf{Behavior Under Attack:} Other users' requests continue to be processed concurrently. The async architecture naturally isolates the impact of slow requests.
+\end{tcolorbox}
+
+% ================================================================
+\section{Periodic Cleanup}
+% ================================================================
+
+\begin{tcolorbox}[colback=toleranceamber!5, colframe=toleranceamber]
+\textbf{Mechanism:} Automatic cleanup of rate limit and lockout data structures.\\
+\textbf{Location:} \texttt{backend/app/middleware/security.py} (rate limiter), \texttt{backend/app/services/auth\_service.py} (token blocklist)\\
+\textbf{Attack Scenario:} A distributed attack from many IP addresses fills the in-memory rate limit dictionary.\\
+\textbf{Behavior Under Attack:}
+\begin{itemize}[nosep]
+  \item Rate limiter: Entries older than 60 seconds are pruned every 60 seconds
+  \item Token blocklist: Expired tokens are cleaned up at startup and periodically
+  \item TOTP lockout: Stale entries with expired lockout windows are naturally reset
+\end{itemize}
+\textbf{Purpose:} Prevents memory growth from distributed attacks where thousands of unique IPs each send a few requests. Without cleanup, the dictionaries would grow indefinitely.
+\end{tcolorbox}
+
+% ================================================================
+\section{Tolerance Summary}
+% ================================================================
+
+\begin{center}
+\begin{tabular}{cll}
+\toprule
+\textbf{\#} & \textbf{Tolerance Mechanism} & \textbf{Attack Type Bounded} \\
+\midrule
+1 & Memory ceiling (2 GB) & Memory exhaustion, DoS \\
+2 & CPU quota (80\%) & CPU exhaustion, cryptomining \\
+3 & File descriptor limit (65536) & Connection exhaustion \\
+4 & Dual-layer rate limiting & Flooding, brute-force \\
+5 & Connection throttling (15/IP) & Slowloris, connection pooling \\
+6 & HTTP 444 on plaintext & Scanner probes, HTTP floods \\
+7 & Progressive IP lockout & TOTP brute-force \\
+8 & Database connection pool (10+5) & Connection storm, query flooding \\
+9 & WebSocket isolation & WS connection exhaustion \\
+10 & Async architecture & Slow request attacks \\
+\midrule
+\multicolumn{2}{l}{\textbf{Total Tolerance Mechanisms}} & \textbf{10} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\vspace{1em}
+
+\textbf{Key design principle:} Every tolerance mechanism is designed to \textbf{bound the impact per-attacker} without affecting legitimate users on different IP addresses. The system degrades gracefully for the attacker while maintaining full service for everyone else.
+
+\subsection{Attack Scenario Matrix}
+
+\begin{center}
+\small
+\begin{tabularx}{\textwidth}{lXX}
+\toprule
+\textbf{Attack} & \textbf{System Response} & \textbf{Legitimate User Impact} \\
+\midrule
+HTTP Flood (single IP) & Rate limited at Nginx (429), then at app layer & None (per-IP limiting) \\
+Distributed HTTP Flood & Rate limited per-IP; cleanup prevents memory growth & Minimal latency increase \\
+Slowloris & 15 connection limit per IP & None \\
+TOTP Brute-Force & Progressive lockout (60 min → 300 min → ...) & None (IP-keyed, not email-keyed) \\
+Memory Exhaustion & Process killed at 2 GB, auto-restart in 3s & 3-second service interruption \\
+CPU Exhaustion & Throttled to 80\% CPU & 20\% CPU available for system/SSH \\
+Database Connection Storm & Pool limited to 15; excess requests queue & Slight latency increase \\
+WebSocket Flood & JWT auth required; 15 connections per IP max & None \\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\end{document}

@@ -1,0 +1,77 @@
+
+  VITE v5.4.21  ready in 656 ms
+
+  ➜  Local:   http://127.0.0.1:5173/
+2:14:04 PM [vite] hmr update /src/pages/LoginPage.jsx, /src/index.css
+2:20:48 PM [vite] hmr update /src/pages/LandingPage.jsx, /src/index.css
+3:22:26 AM [vite] hmr update /src/contexts/AuthContext.jsx, /src/index.css, /src/pages/RegisterPage.jsx, /src/pages/MessagesPage.jsx, /src/pages/SecurityPage.jsx
+3:23:25 AM [vite] hmr update /src/pages/MessagesPage.jsx, /src/index.css
+3:23:36 AM [vite] hmr update /src/pages/MessagesPage.jsx, /src/index.css
+3:24:03 AM [vite] hmr update /src/pages/ProfilePage.jsx, /src/index.css
+3:24:19 AM [vite] hmr update /src/contexts/AuthContext.jsx, /src/index.css
+3:25:51 AM [vite] hmr update /src/contexts/AuthContext.jsx, /src/index.css
+3:25:52 AM [vite] hmr update /src/contexts/AuthContext.jsx, /src/index.css
+3:26:09 AM [vite] hmr update /src/App.jsx, /src/index.css
+3:26:14 AM [vite] hmr update /src/App.jsx, /src/index.css
+3:28:35 AM [vite] hmr update /src/contexts/AuthContext.jsx, /src/index.css
+3:28:35 AM [vite] hmr update /src/App.jsx, /src/index.css
+3:28:35 AM [vite] hmr update /src/pages/ProfilePage.jsx, /src/index.css
+3:28:35 AM [vite] hmr update /src/pages/MessagesPage.jsx, /src/index.css
+3:28:35 AM [vite] hmr update /src/contexts/AuthContext.jsx, /src/index.css, /src/pages/RegisterPage.jsx, /src/pages/MessagesPage.jsx, /src/pages/SecurityPage.jsx
+4:12:06 AM [vite] hmr update /src/components/KeyManagement.jsx, /src/index.css
+4:12:06 AM [vite] hmr update /src/components/KeyImportPrompt.jsx, /src/index.css
+4:16:32 AM [vite] hmr update /src/components/KeyImportPrompt.jsx, /src/index.css
+4:16:32 AM [vite] hmr update /src/components/KeyManagement.jsx, /src/index.css
+4:27:19 AM [vite] hmr update /src/pages/MessagesPage.jsx, /src/index.css
+4:51:08 AM [vite] hmr update /src/pages/MessagesPage.jsx, /src/index.css
+6:06:01 AM [vite] hmr update /src/contexts/AuthContext.jsx, /src/index.css, /src/pages/RegisterPage.jsx, /src/pages/MessagesPage.jsx, /src/pages/SecurityPage.jsx, /src/components/KeyImportPrompt.jsx, /src/components/KeyManagement.jsx
+6:06:01 AM [vite] hmr invalidate /src/contexts/AuthContext.jsx Could not Fast Refresh ("useAuth" export is incompatible). Learn more at https://github.com/vitejs/vite-plugin-react/tree/main/packages/plugin-react#consistent-components-exports
+6:06:01 AM [vite] page reload src/contexts/AuthContext.jsx
+6:11:49 AM [vite] hmr update /src/contexts/AuthContext.jsx, /src/index.css, /src/pages/RegisterPage.jsx, /src/pages/MessagesPage.jsx, /src/pages/SecurityPage.jsx, /src/components/KeyImportPrompt.jsx, /src/components/KeyManagement.jsx
+6:11:49 AM [vite] hmr invalidate /src/contexts/AuthContext.jsx Could not Fast Refresh ("useAuth" export is incompatible). Learn more at https://github.com/vitejs/vite-plugin-react/tree/main/packages/plugin-react#consistent-components-exports
+6:11:49 AM [vite] page reload src/contexts/AuthContext.jsx
+9:15:39 AM [vite] hmr update /src/pages/ViewProfilePage.jsx, /src/index.css
+9:15:45 AM [vite] hmr update /src/pages/CompanyPage.jsx, /src/index.css
+11:31:31 AM [vite] hmr update /src/pages/RegisterPage.jsx, /src/index.css
+11:31:31 AM [vite] hmr update /src/pages/ForgotPasswordPage.jsx, /src/index.css
+11:31:31 AM [vite] hmr update /src/pages/SecurityPage.jsx, /src/index.css
+11:31:37 AM [vite] hmr update /src/pages/ForgotPasswordPage.jsx, /src/index.css
+11:31:45 AM [vite] hmr update /src/pages/ViewProfilePage.jsx, /src/index.css
+11:32:25 AM [vite] hmr update /src/pages/RegisterPage.jsx, /src/index.css
+11:32:37 AM [vite] hmr update /src/pages/JobsPage.jsx, /src/index.css
+11:33:00 AM [vite] hmr update /src/pages/ViewProfilePage.jsx, /src/index.css
+11:39:45 AM [vite] hmr update /src/pages/RegisterPage.jsx, /src/index.css
+11:39:45 AM [vite] hmr update /src/pages/JobsPage.jsx, /src/index.css
+11:39:45 AM [vite] hmr update /src/pages/ForgotPasswordPage.jsx, /src/index.css
+11:39:45 AM [vite] hmr update /src/pages/ViewProfilePage.jsx, /src/index.css
+11:39:45 AM [vite] hmr update /src/pages/SecurityPage.jsx, /src/index.css
+12:25:05 PM [vite] hmr update /src/pages/MessagesPage.jsx, /src/index.css
+12:25:15 PM [vite] hmr update /src/pages/MessagesPage.jsx, /src/index.css
+12:25:25 PM [vite] hmr update /src/pages/MessagesPage.jsx, /src/index.css
+12:35:29 PM [vite] hmr update /src/pages/MessagesPage.jsx, /src/index.css
+12:38:13 PM [vite] hmr update /src/pages/MessagesPage.jsx, /src/index.css
+12:38:21 PM [vite] hmr update /src/pages/MessagesPage.jsx, /src/index.css
+12:39:36 PM [vite] hmr update /src/pages/AdminDashboard.jsx, /src/index.css
+12:39:36 PM [vite] hmr update /src/pages/CompanyPage.jsx, /src/index.css
+12:39:36 PM [vite] hmr update /src/pages/ResumePage.jsx, /src/index.css
+12:45:44 PM [vite] hmr update /src/pages/CompanyPage.jsx, /src/index.css
+12:45:44 PM [vite] hmr update /src/pages/AdminDashboard.jsx, /src/index.css
+12:45:44 PM [vite] hmr update /src/pages/ResumePage.jsx, /src/index.css
+12:53:53 PM [vite] hmr update /src/pages/MessagesPage.jsx, /src/index.css
+12:54:00 PM [vite] hmr update /src/pages/MessagesPage.jsx, /src/index.css
+12:54:12 PM [vite] hmr update /src/pages/MessagesPage.jsx, /src/index.css
+12:54:20 PM [vite] hmr update /src/pages/MessagesPage.jsx, /src/index.css
+12:54:33 PM [vite] hmr update /src/pages/MessagesPage.jsx, /src/index.css
+12:54:41 PM [vite] hmr update /src/pages/MessagesPage.jsx, /src/index.css
+12:54:58 PM [vite] hmr update /src/pages/MessagesPage.jsx, /src/index.css
+12:55:50 PM [vite] hmr update /src/pages/MessagesPage.jsx, /src/index.css
+12:56:02 PM [vite] hmr update /src/pages/MessagesPage.jsx, /src/index.css
+1:01:38 PM [vite] hmr update /src/pages/MessagesPage.jsx, /src/index.css
+1:02:26 PM [vite] hmr update /src/pages/MessagesPage.jsx, /src/index.css
+1:08:22 PM [vite] hmr update /src/pages/MessagesPage.jsx, /src/index.css
+1:08:29 PM [vite] hmr update /src/pages/MessagesPage.jsx, /src/index.css
+1:12:14 PM [vite] hmr update /src/contexts/AuthContext.jsx, /src/index.css
+1:19:01 PM [vite] hmr update /src/pages/MessagesPage.jsx, /src/index.css
+1:19:13 PM [vite] hmr update /src/pages/MessagesPage.jsx, /src/index.css
+1:26:12 PM [vite] hmr update /src/contexts/AuthContext.jsx, /src/index.css
+1:26:12 PM [vite] hmr update /src/pages/MessagesPage.jsx, /src/index.css

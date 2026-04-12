@@ -1,0 +1,375 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{longtable}
+\usepackage{enumitem}
+\usepackage{fancyhdr}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{tcolorbox}
+\usepackage{amssymb}
+
+\definecolor{headerblue}{HTML}{1E40AF}
+\definecolor{shieldgreen}{HTML}{166534}
+\definecolor{recoveryblue}{HTML}{1D4ED8}
+
+\hypersetup{colorlinks=true,linkcolor=headerblue,urlcolor=headerblue}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\textbf{VajraKavach — Attack Recovery Report}}
+\fancyhead[R]{\small\textbf{CONFIDENTIAL}}
+\fancyfoot[C]{\thepage}
+\renewcommand{\headrulewidth}{0.5pt}
+
+\title{
+  \vspace{-1cm}
+  \textbf{\Huge VajraKavach}\\[0.3cm]
+  \textbf{\Large Attack Recovery Report}\\[0.3cm]
+  \large Recovering After an Attack or Failure\\[0.8cm]
+  \normalsize
+  \begin{tabular}{ll}
+    \textbf{Report Date:} & April 7, 2026 \\
+    \textbf{Classification:} & CONFIDENTIAL \\
+    \textbf{Prepared By:} & VajraKavach Security Team \\
+    \textbf{Platform:} & Secure Job Search \& Professional Networking \\
+    \textbf{Target:} & \texttt{https://192.168.3.44} \\
+    \textbf{Course:} & CSE 345/545, IIIT-Delhi \\
+  \end{tabular}
+}
+\author{}
+\date{}
+
+\begin{document}
+\maketitle
+\thispagestyle{fancy}
+
+\newpage
+\tableofcontents
+\newpage
+
+% ================================================================
+\section{Executive Summary}
+% ================================================================
+
+Attack recovery encompasses all mechanisms that enable a system to \textbf{restore service after an attack succeeds} or a failure occurs. This includes automatic service restart after crashes, detection of hanging processes, scheduled health monitoring, forensic logging for post-incident analysis, and cryptographic integrity verification of data.
+
+VajraKavach implements \textbf{10 distinct recovery mechanisms} organized into three categories: automated service restoration, security state persistence, and forensic evidence.
+
+% ================================================================
+\section{Automated Service Restoration}
+% ================================================================
+
+\subsection{Systemd Auto-Restart}
+
+\begin{tcolorbox}[colback=recoveryblue!5, colframe=recoveryblue]
+\textbf{Mechanism:} \texttt{Restart=always} with \texttt{RestartSec=3} in systemd service unit.\\
+\textbf{Location:} \texttt{/etc/systemd/system/vajrakavach-backend.service}\\
+\textbf{Configuration:}
+\begin{verbatim}
+[Service]
+Restart=always
+RestartSec=3
+StartLimitIntervalSec=60
+StartLimitBurst=10
+\end{verbatim}
+\textbf{Failure Scenarios Covered:}
+\begin{itemize}[nosep]
+  \item Process crash (segfault, unhandled exception, OOM kill)
+  \item Intentional termination (SIGTERM, SIGKILL)
+  \item Exit with non-zero code
+\end{itemize}
+\textbf{Recovery Timeline:}
+\begin{center}
+\begin{tabular}{ll}
+\toprule
+\textbf{Event} & \textbf{Time} \\
+\midrule
+Process crashes & $T = 0$ \\
+systemd detects exit & $T + 0$s \\
+Restart delay & $T + 3$s \\
+Uvicorn starts, lifespan begins & $T + 3.5$s \\
+Database init, state reload & $T + 4$s \\
+\texttt{READY=1} sent, serving requests & $T + 4.5$s \\
+\bottomrule
+\end{tabular}
+\end{center}
+\textbf{Recovery time: $\sim$4.5 seconds from crash to serving requests.}
+
+\textbf{Restart throttling:} Up to 10 restarts are allowed within a 60-second window. If the service crashes more than 10 times in 60 seconds (indicating a persistent failure), systemd stops attempting restarts to prevent crash loops. This can be reset with \texttt{systemctl reset-failed}.
+\end{tcolorbox}
+
+\subsection{Systemd Watchdog}
+
+\begin{tcolorbox}[colback=recoveryblue!5, colframe=recoveryblue]
+\textbf{Mechanism:} \texttt{WatchdogSec=30} with \texttt{Type=notify} — process must send periodic heartbeats.\\
+\textbf{Location:} Service: \texttt{/etc/systemd/system/vajrakavach-backend.service}. Application: \texttt{backend/app/main.py}\\
+\textbf{How It Works:}
+\begin{enumerate}[nosep]
+  \item The service is configured with \texttt{Type=notify} and \texttt{WatchdogSec=30}
+  \item On startup, the FastAPI application sends \texttt{READY=1} to systemd via the \texttt{sd\_notify} protocol (Unix datagram socket)
+  \item An async background task sends \texttt{WATCHDOG=1} every 15 seconds (half the watchdog interval)
+  \item If systemd does not receive a heartbeat within 30 seconds, it considers the process \textbf{hung} and kills it with SIGABRT
+  \item The \texttt{Restart=always} policy then restarts the service
+\end{enumerate}
+\textbf{Failure Scenarios Covered (beyond simple crashes):}
+\begin{itemize}[nosep]
+  \item \textbf{Deadlock:} Event loop stuck in a deadlocked state — heartbeat stops
+  \item \textbf{Infinite loop:} CPU-bound infinite loop blocks the async event loop — heartbeat stops
+  \item \textbf{Resource exhaustion:} Memory thrashing or I/O blocking prevents async tasks from running
+  \item \textbf{Database connection hang:} If all DB connections are stuck, the event loop may still run but the app is effectively dead
+\end{itemize}
+\textbf{Implementation:}
+\begin{verbatim}
+def _sd_notify(state: str):
+    addr = os.environ.get("NOTIFY_SOCKET")
+    if not addr:
+        return
+    sock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+    sock.connect(addr)
+    sock.sendall(state.encode())
+    sock.close()
+
+async def _watchdog_loop():
+    interval = int(os.environ.get("WATCHDOG_USEC", "0")) / 1_000_000 / 2
+    while True:
+        _sd_notify("WATCHDOG=1")
+        await asyncio.sleep(interval)
+\end{verbatim}
+\textbf{Recovery time: $\leq$30s (watchdog timeout) + 4.5s (restart) = $\leq$34.5 seconds.}
+\end{tcolorbox}
+
+\subsection{Health Check Timer}
+
+\begin{tcolorbox}[colback=recoveryblue!5, colframe=recoveryblue]
+\textbf{Mechanism:} Systemd timer executes a health check script every 2 minutes.\\
+\textbf{Location:}
+\begin{itemize}[nosep]
+  \item Script: \texttt{/usr/local/bin/vajrakavach-healthcheck.sh}
+  \item Timer: \texttt{/etc/systemd/system/vajrakavach-healthcheck.timer}
+  \item Service: \texttt{/etc/systemd/system/vajrakavach-healthcheck.service}
+\end{itemize}
+\textbf{How It Works:}
+\begin{enumerate}[nosep]
+  \item Every 2 minutes, systemd triggers the health check service
+  \item The script sends an HTTPS request to \texttt{https://192.168.3.44/api/health}
+  \item If the request fails, it retries up to 3 times with 5-second delays
+  \item If all 3 retries fail, it logs an alert to syslog and restarts the backend service
+\end{enumerate}
+\textbf{Failure Scenarios Covered (beyond watchdog):}
+\begin{itemize}[nosep]
+  \item \textbf{Backend serving but Nginx down:} Health check via HTTPS goes through Nginx — catches Nginx failures too
+  \item \textbf{Backend alive but not serving:} Process is running and sending WATCHDOG=1 but the HTTP handler is broken (e.g., middleware exception, route registration failure)
+  \item \textbf{TLS certificate expiry:} HTTPS health check would fail if the certificate is expired or invalid
+  \item \textbf{Network connectivity issues:} Detects if the service is unreachable from the network perspective
+\end{itemize}
+\textbf{Note:} This is implemented as a \textbf{systemd timer}, not a cron job. Systemd timers provide better integration with service management (dependencies, logging via journalctl, status visibility via \texttt{systemctl list-timers}).
+
+\textbf{Recovery time: $\leq$2 minutes (timer interval) + 15s (3 retries × 5s) + 4.5s (restart) $\approx$ 2.5 minutes worst case.}
+\end{tcolorbox}
+
+\subsection{Kernel Panic Auto-Reboot}
+
+\begin{tcolorbox}[colback=recoveryblue!5, colframe=recoveryblue]
+\textbf{Mechanism:} \texttt{kernel.panic=10} — automatic system reboot 10 seconds after a kernel panic.\\
+\textbf{Location:} Runtime: \texttt{sysctl -w kernel.panic=10}. Persistent: \texttt{/etc/sysctl.d/99-vajrakavach-panic.conf}\\
+\textbf{Failure Scenarios Covered:}
+\begin{itemize}[nosep]
+  \item \textbf{Kernel panic:} Critical kernel error (hardware failure, driver bug, memory corruption)
+  \item \textbf{OOM with panic:} If \texttt{vm.panic\_on\_oom=1} is set, OOM conditions trigger a panic and reboot
+\end{itemize}
+\textbf{Recovery Timeline:}
+\begin{center}
+\begin{tabular}{ll}
+\toprule
+\textbf{Event} & \textbf{Time} \\
+\midrule
+Kernel panic occurs & $T = 0$ \\
+System reboots & $T + 10$s \\
+BIOS/UEFI POST & $T + 30$s (approx.) \\
+OS boots, systemd starts services & $T + 60$s (approx.) \\
+VajraKavach backend ready & $T + 65$s (approx.) \\
+\bottomrule
+\end{tabular}
+\end{center}
+\textbf{Recovery time: $\sim$1 minute from kernel panic to service restoration.}
+
+\textbf{Without this setting:} The default \texttt{kernel.panic=0} halts the system permanently after a kernel panic, requiring manual intervention (physical access or remote IPMI/iLO) to reboot.
+\end{tcolorbox}
+
+\subsection{Service Dependency Chain}
+
+\begin{tcolorbox}[colback=recoveryblue!5, colframe=recoveryblue]
+\textbf{Mechanism:} \texttt{After=postgresql.service} and \texttt{Requires=postgresql.service} in systemd unit.\\
+\textbf{Location:} \texttt{/etc/systemd/system/vajrakavach-backend.service}\\
+\textbf{Purpose:} After a system reboot (including kernel panic auto-reboot), services must start in the correct order. This ensures PostgreSQL is running before the backend attempts database connections.\\
+\textbf{Without dependency chain:} The backend would start before PostgreSQL, fail to connect to the database, and crash. The \texttt{Restart=always} policy would restart it, but it would take several crash-restart cycles before PostgreSQL is ready.
+\end{tcolorbox}
+
+% ================================================================
+\section{Security State Persistence}
+% ================================================================
+
+\subsection{Token Revocation Persistence}
+
+\begin{tcolorbox}[colback=recoveryblue!5, colframe=recoveryblue]
+\textbf{Mechanism:} JWT revocation blocklist persisted to PostgreSQL, reloaded on startup.\\
+\textbf{Location:} \texttt{backend/app/services/auth\_service.py}\\
+\textbf{How It Works:}
+\begin{enumerate}[nosep]
+  \item In-memory set provides O(1) revocation checks during normal operation
+  \item Pending revocations are batched and flushed to the \texttt{revoked\_tokens} table
+  \item On shutdown, all pending revocations are flushed via \texttt{flush\_pending\_revocations()}
+  \item On startup, \texttt{load\_revoked\_cache()} loads all non-expired revoked tokens from the database
+  \item Expired tokens are automatically cleaned up via \texttt{cleanup\_expired\_tokens()}
+\end{enumerate}
+\textbf{Purpose:} If an attacker steals a token and the administrator revokes it, the revocation must survive server restarts. Without persistence, a restart would ``un-revoke'' the stolen token, giving the attacker access again.
+\end{tcolorbox}
+
+\subsection{TOTP Lockout State Persistence}
+
+\begin{tcolorbox}[colback=recoveryblue!5, colframe=recoveryblue]
+\textbf{Mechanism:} TOTP lockout state (attempts, lockout level, locked-until) persisted to PostgreSQL.\\
+\textbf{Location:} \texttt{backend/app/services/totp\_service.py}\\
+\textbf{How It Works:}
+\begin{enumerate}[nosep]
+  \item In-memory dict (\texttt{\_totp\_attempts}) provides fast lockout checks
+  \item On shutdown, \texttt{sync\_totp\_lockout\_to\_db()} writes all state to the \texttt{totp\_lockouts} table
+  \item On startup, \texttt{load\_totp\_lockout\_from\_db()} restores the state
+  \item The lockout level (escalation counter) persists across sessions, ensuring progressive lockout escalation is not reset by server restarts
+\end{enumerate}
+\textbf{Purpose:} An attacker cannot defeat progressive lockout by causing the server to restart. The lockout level (60 min → 300 min → 1500 min) continues to escalate regardless of restarts.
+\end{tcolorbox}
+
+% ================================================================
+\section{Forensic Evidence \& Integrity}
+% ================================================================
+
+\subsection{SHA-256 Hash-Chained Audit Logs}
+
+\begin{tcolorbox}[colback=recoveryblue!5, colframe=recoveryblue]
+\textbf{Mechanism:} Every audit log entry includes a SHA-256 hash of itself concatenated with the previous entry's hash.\\
+\textbf{Location:} \texttt{backend/app/services/audit\_service.py}\\
+\textbf{Hash computation:}
+\begin{verbatim}
+payload = f"{previous_hash}|{action}|{user_id}|{resource}|
+            {resource_id}|{details}|{ip_address}|{timestamp}"
+hash = SHA256(payload)
+\end{verbatim}
+\textbf{Purpose:} After an attack, investigators need to reconstruct the sequence of events. Hash chaining ensures that if an attacker modifies, deletes, or reorders any log entry, the chain breaks and tampering is detectable.\\
+\textbf{Logged fields:} Action type, user ID, resource type, resource ID, IP address, timestamp, and free-form details.
+\end{tcolorbox}
+
+\subsection{Blockchain Integrity Layer}
+
+\begin{tcolorbox}[colback=recoveryblue!5, colframe=recoveryblue]
+\textbf{Mechanism:} Merkle tree blocks with proof-of-work over audit log entries.\\
+\textbf{Location:} \texttt{backend/app/services/blockchain\_service.py}\\
+\textbf{Architecture:}
+\begin{enumerate}[nosep]
+  \item Audit log entries are collected in batches of 10 (\texttt{BLOCK\_SIZE=10})
+  \item A Merkle root is computed from the SHA-256 hashes of all entries in the batch
+  \item A proof-of-work nonce is mined such that the block hash starts with 2 leading zeros (\texttt{DIFFICULTY=2})
+  \item The block is chained to the previous block via its hash
+  \item The genesis block uses a predefined hash (\texttt{"0" * 64})
+\end{enumerate}
+\textbf{Block structure:}
+\begin{verbatim}
+Block Hash = SHA256(block_number | previous_hash | merkle_root |
+                    timestamp | nonce)
+\end{verbatim}
+\textbf{Post-attack verification:} To verify audit log integrity after an attack, the system can:
+\begin{enumerate}[nosep]
+  \item Recompute each block's Merkle root from its constituent entries
+  \item Verify the proof-of-work (hash starts with \texttt{DIFFICULTY} zeros)
+  \item Verify each block's \texttt{previous\_hash} matches the previous block's hash
+  \item Any discrepancy indicates tampering
+\end{enumerate}
+\textbf{Purpose:} Provides cryptographic proof that audit logs have not been modified post-attack. This is essential for forensic analysis, incident response, and regulatory compliance.
+\end{tcolorbox}
+
+\subsection{File Integrity Verification}
+
+\begin{tcolorbox}[colback=recoveryblue!5, colframe=recoveryblue]
+\textbf{Mechanism:} Fernet encryption (AES-128-CBC + HMAC-SHA256) with SHA-256 checksums.\\
+\textbf{Location:} \texttt{backend/app/services/encryption\_service.py}\\
+\textbf{How It Works:}
+\begin{itemize}[nosep]
+  \item Resume files are encrypted with Fernet before storage
+  \item Fernet includes HMAC-SHA256 authentication — any tampering with the ciphertext is detected during decryption (\texttt{InvalidToken} exception)
+  \item Additionally, SHA-256 checksums are stored per file for independent integrity verification
+\end{itemize}
+\textbf{Post-attack recovery:} If an attacker modifies encrypted files on disk, decryption will fail with an HMAC validation error, alerting the system to file tampering.
+\end{tcolorbox}
+
+% ================================================================
+\section{Recovery Architecture Diagram}
+% ================================================================
+
+The recovery mechanisms form a layered detection and response system:
+
+\begin{center}
+\begin{tabular}{clcl}
+\toprule
+\textbf{Layer} & \textbf{Mechanism} & \textbf{Detection Time} & \textbf{Recovery Time} \\
+\midrule
+1 & Systemd Auto-Restart & Immediate (on crash) & $\sim$4.5 seconds \\
+2 & Systemd Watchdog & $\leq$ 30 seconds (on hang) & $\sim$34.5 seconds \\
+3 & Health Check Timer & $\leq$ 2 minutes (on unresponsive) & $\sim$2.5 minutes \\
+4 & Kernel Panic Reboot & 10 seconds (on kernel panic) & $\sim$1 minute \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\textbf{Cascading coverage:}
+\begin{itemize}[nosep]
+  \item If the process \textbf{crashes}, Layer 1 handles it in 4.5 seconds.
+  \item If the process \textbf{hangs} (no crash), Layer 2 detects it within 30 seconds.
+  \item If the process is \textbf{alive but unresponsive} (watchdog still ticking but HTTP broken), Layer 3 catches it within 2 minutes.
+  \item If the \textbf{entire OS fails} (kernel panic), Layer 4 reboots in 10 seconds.
+\end{itemize}
+
+No failure mode goes undetected for more than 2.5 minutes.
+
+% ================================================================
+\section{Recovery Summary}
+% ================================================================
+
+\begin{center}
+\begin{tabular}{clc}
+\toprule
+\textbf{\#} & \textbf{Recovery Mechanism} & \textbf{Category} \\
+\midrule
+1 & Systemd auto-restart (Restart=always, 3s delay) & Service Restoration \\
+2 & Systemd watchdog (WatchdogSec=30, sd\_notify) & Service Restoration \\
+3 & Health check timer (every 2 min, 3 retries) & Service Restoration \\
+4 & Kernel panic auto-reboot (10s delay) & Service Restoration \\
+5 & Service dependency chain (Requires=postgresql) & Service Restoration \\
+6 & Token revocation persistence (DB-backed) & State Persistence \\
+7 & TOTP lockout state persistence (DB-backed) & State Persistence \\
+8 & SHA-256 hash-chained audit logs & Forensic Evidence \\
+9 & Blockchain integrity layer (Merkle + PoW) & Forensic Evidence \\
+10 & File integrity verification (Fernet HMAC + SHA-256) & Forensic Evidence \\
+\midrule
+\multicolumn{2}{l}{\textbf{Total Recovery Mechanisms}} & \textbf{10} \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\vspace{1em}
+
+\subsection{Recovery Guarantee}
+
+\begin{tcolorbox}[colback=recoveryblue!5, colframe=recoveryblue, title=\textbf{Maximum Downtime Guarantee}]
+\begin{itemize}[nosep]
+  \item \textbf{Process crash:} $\leq$ 5 seconds recovery
+  \item \textbf{Process hang:} $\leq$ 35 seconds recovery
+  \item \textbf{Unresponsive service:} $\leq$ 2.5 minutes recovery
+  \item \textbf{Kernel panic:} $\leq$ 1.5 minutes recovery
+  \item \textbf{Security state (lockouts, revocations):} Survives all restarts — zero data loss
+  \item \textbf{Audit trail integrity:} Cryptographically verifiable post-incident
+\end{itemize}
+\end{tcolorbox}
+
+\end{document}

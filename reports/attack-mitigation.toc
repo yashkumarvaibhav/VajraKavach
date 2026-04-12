@@ -1,0 +1,30 @@
+\contentsline {section}{\numberline {1}Executive Summary}{3}{section.1}%
+\contentsline {section}{\numberline {2}Network \& Transport Layer Mitigation}{3}{section.2}%
+\contentsline {subsection}{\numberline {2.1}HTTPS Enforcement}{3}{subsection.2.1}%
+\contentsline {subsection}{\numberline {2.2}TLS Configuration}{3}{subsection.2.2}%
+\contentsline {subsection}{\numberline {2.3}HSTS (HTTP Strict Transport Security)}{3}{subsection.2.3}%
+\contentsline {subsection}{\numberline {2.4}LAN-Only Access Restriction}{4}{subsection.2.4}%
+\contentsline {subsection}{\numberline {2.5}BREACH Attack Prevention}{4}{subsection.2.5}%
+\contentsline {section}{\numberline {3}Rate Limiting \& Connection Controls}{4}{section.3}%
+\contentsline {subsection}{\numberline {3.1}Dual-Layer Rate Limiting}{4}{subsection.3.1}%
+\contentsline {subsection}{\numberline {3.2}Connection Throttling}{4}{subsection.3.2}%
+\contentsline {subsection}{\numberline {3.3}Request Body Size Limits}{5}{subsection.3.3}%
+\contentsline {section}{\numberline {4}Authentication \& Authorization Mitigation}{5}{section.4}%
+\contentsline {subsection}{\numberline {4.1}Argon2id Password Hashing}{5}{subsection.4.1}%
+\contentsline {subsection}{\numberline {4.2}Password Policy}{5}{subsection.4.2}%
+\contentsline {subsection}{\numberline {4.3}TOTP Two-Factor Authentication}{6}{subsection.4.3}%
+\contentsline {subsection}{\numberline {4.4}Progressive IP-Based Lockout}{6}{subsection.4.4}%
+\contentsline {subsection}{\numberline {4.5}JWT Token Security}{6}{subsection.4.5}%
+\contentsline {subsection}{\numberline {4.6}Token Revocation}{7}{subsection.4.6}%
+\contentsline {section}{\numberline {5}Injection \& Input Validation Mitigation}{7}{section.5}%
+\contentsline {subsection}{\numberline {5.1}SQL Injection Prevention}{7}{subsection.5.1}%
+\contentsline {subsection}{\numberline {5.2}XSS Prevention}{7}{subsection.5.2}%
+\contentsline {subsection}{\numberline {5.3}CSRF Protection}{8}{subsection.5.3}%
+\contentsline {subsection}{\numberline {5.4}CSWSH (Cross-Site WebSocket Hijacking) Protection}{8}{subsection.5.4}%
+\contentsline {subsection}{\numberline {5.5}File Upload Validation}{8}{subsection.5.5}%
+\contentsline {section}{\numberline {6}Security Headers}{8}{section.6}%
+\contentsline {section}{\numberline {7}Path \& Information Disclosure Mitigation}{9}{section.7}%
+\contentsline {subsection}{\numberline {7.1}Sensitive Path Blocking}{9}{subsection.7.1}%
+\contentsline {subsection}{\numberline {7.2}Information Concealment}{9}{subsection.7.2}%
+\contentsline {section}{\numberline {8}Encryption at Rest}{9}{section.8}%
+\contentsline {section}{\numberline {9}Mitigation Summary}{10}{section.9}%

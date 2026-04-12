@@ -4,6 +4,7 @@ User management, moderation, admin lifecycle, audit log viewing.
 """
 
 import uuid
+from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
@@ -13,9 +14,11 @@ from pydantic import BaseModel, EmailStr, Field
 from app.database import get_db
 from app.models.user import User, UserProfile, UserRole
 from app.models.audit import AuditLog
+from app.models.security_state import DeceptionEvent, DeceptionActorState
 from app.schemas.user import UserResponse
 from app.dependencies import require_role
 from app.services.audit_service import create_audit_log, verify_audit_chain
+from app.services.deception_service import threat_level, DELAY_THRESHOLD
 from app.utils.ip import get_client_ip
 from app.services.auth_service import hash_password
 from app.services.totp_service import generate_totp_secret, get_totp_uri, generate_qr_code_base64, encrypt_totp_secret
@@ -38,7 +41,7 @@ class PromoteAdminRequest(BaseModel):
 @router.get("/users", response_model=list[UserResponse])
 async def list_all_users(
     page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
+    page_size: int = Query(20, ge=1, le=500),
     role: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role("admin", "platform_admin")),
@@ -380,6 +383,28 @@ async def admin_dashboard(
     log_count = (await db.execute(select(func.count(AuditLog.id)))).scalar()
     suspended_count = (await db.execute(select(func.count(User.id)).where(User.is_suspended == True))).scalar()
     active_jobs = (await db.execute(select(func.count(Job.id)).where(Job.is_active == True))).scalar()
+    now = datetime.utcnow()
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    deception_today = (
+        await db.execute(
+            select(func.count(DeceptionEvent.id)).where(DeceptionEvent.created_at >= today_start)
+        )
+    ).scalar()
+    deception_timeouts = (
+        await db.execute(
+            select(func.count(DeceptionActorState.id)).where(
+                DeceptionActorState.timeout_until.is_not(None),
+                DeceptionActorState.timeout_until > now,
+            )
+        )
+    ).scalar()
+    deception_high_risk = (
+        await db.execute(
+            select(func.count(DeceptionActorState.id)).where(
+                DeceptionActorState.threat_score >= DELAY_THRESHOLD
+            )
+        )
+    ).scalar()
 
     return {
         "total_users": user_count,
@@ -391,11 +416,99 @@ async def admin_dashboard(
         "total_resumes": resume_count,
         "total_audit_logs": log_count,
         "suspended_users": suspended_count,
+        "deception_events_today": deception_today,
+        "deception_active_timeouts": deception_timeouts,
+        "deception_high_risk_actors": deception_high_risk,
     }
+
+
+@router.get("/deception/events")
+async def list_deception_events(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role("admin", "platform_admin")),
+):
+    """List deception/honeypot events with score progression."""
+    offset = (page - 1) * page_size
+    result = await db.execute(
+        select(DeceptionEvent)
+        .order_by(DeceptionEvent.created_at.desc())
+        .offset(offset)
+        .limit(page_size)
+    )
+    events = result.scalars().all()
+    return [
+        {
+            "id": str(e.id),
+            "actor_id": e.actor_id,
+            "user_id": str(e.user_id) if e.user_id else None,
+            "session_fingerprint": e.session_fingerprint,
+            "ip_address": e.ip_address,
+            "endpoint": e.endpoint,
+            "method": e.method,
+            "event_type": e.event_type,
+            "score_delta": e.score_delta,
+            "score_after": e.score_after,
+            "threat_level": threat_level(e.score_after),
+            "payload_digest": e.payload_digest,
+            "user_agent": e.user_agent,
+            "headers_snapshot": e.headers_snapshot,
+            "created_at": e.created_at.isoformat(),
+        }
+        for e in events
+    ]
+
+
+@router.get("/deception/actors")
+async def list_deception_actors(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+    active_only: bool = Query(True),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role("admin", "platform_admin")),
+):
+    """List actor-level deception state and timeout status."""
+    now = datetime.utcnow()
+    query = select(DeceptionActorState).order_by(
+        DeceptionActorState.threat_score.desc(),
+        DeceptionActorState.updated_at.desc(),
+    )
+    if active_only:
+        query = query.where(
+            (DeceptionActorState.threat_score > 0)
+            | (
+                (DeceptionActorState.timeout_until.is_not(None))
+                & (DeceptionActorState.timeout_until > now)
+            )
+        )
+
+    offset = (page - 1) * page_size
+    result = await db.execute(query.offset(offset).limit(page_size))
+    actors = result.scalars().all()
+    return [
+        {
+            "actor_id": a.actor_id,
+            "user_id": str(a.user_id) if a.user_id else None,
+            "session_fingerprint": a.session_fingerprint,
+            "ip_address": a.ip_address,
+            "threat_score": a.threat_score,
+            "threat_level": threat_level(a.threat_score),
+            "total_events": a.total_events,
+            "is_timed_out": bool(a.timeout_until and a.timeout_until > now),
+            "timeout_until": a.timeout_until.isoformat() if a.timeout_until else None,
+            "last_event_at": a.last_event_at.isoformat() if a.last_event_at else None,
+            "last_endpoint": a.last_endpoint,
+            "updated_at": a.updated_at.isoformat() if a.updated_at else None,
+        }
+        for a in actors
+    ]
 
 
 @router.get("/jobs")
 async def admin_list_jobs(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role("admin", "platform_admin")),
 ):
@@ -403,10 +516,12 @@ async def admin_list_jobs(
     from app.models.job import Job
     from app.models.company import Company
 
+    offset = (page - 1) * page_size
     result = await db.execute(
         select(Job, Company.name.label("company_name"))
         .join(Company, Job.company_id == Company.id)
         .order_by(Job.created_at.desc())
+        .offset(offset).limit(page_size)
     )
     rows = result.all()
 
@@ -459,15 +574,19 @@ async def admin_delist_job(
 
 @router.get("/resumes")
 async def list_all_resumes(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role("admin", "platform_admin")),
 ):
     """List all resumes. Download requires TOTP via /api/resumes/{id}/download."""
     from app.models.resume import Resume
+    offset = (page - 1) * page_size
     result = await db.execute(
         select(Resume, User.full_name, User.email)
         .join(User, Resume.user_id == User.id)
         .order_by(Resume.uploaded_at.desc())
+        .offset(offset).limit(page_size)
     )
     rows = result.all()
     return [

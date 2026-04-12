@@ -19,6 +19,10 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [roleFilter, setRoleFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [userPage, setUserPage] = useState(1);
+  const usersPerPage = 20;
   const [auditPage, setAuditPage] = useState(1);
   const [announcements, setAnnouncements] = useState([]);
   const [announcementTitle, setAnnouncementTitle] = useState('');
@@ -30,6 +34,8 @@ export default function AdminDashboard() {
   const [blocks, setBlocks] = useState([]);
   const [blockchainStatus, setBlockchainStatus] = useState(null);
   const [mining, setMining] = useState(false);
+  const [deceptionEvents, setDeceptionEvents] = useState([]);
+  const [deceptionActors, setDeceptionActors] = useState([]);
 
   const verify = async () => {
     setVerifyError('');
@@ -56,7 +62,7 @@ export default function AdminDashboard() {
   const fetchUsers = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await api.get('/admin/users');
+      const res = await api.get('/admin/users?page_size=100');
       setUsers(res.data || []);
     } catch (err) {
       console.error('Users error:', err);
@@ -81,6 +87,7 @@ export default function AdminDashboard() {
     if (verified && tab === 'announcements') fetchAnnouncements();
     if (verified && tab === 'resumes') fetchResumes();
     if (verified && tab === 'reports') fetchReports();
+    if (verified && tab === 'threats') fetchDeception();
   }, [verified, tab]);
 
   const fetchResumes = async () => {
@@ -124,6 +131,19 @@ export default function AdminDashboard() {
     }
   };
 
+  const fetchDeception = async () => {
+    try {
+      const [eventsRes, actorsRes] = await Promise.all([
+        api.get('/admin/deception/events?page=1&page_size=100'),
+        api.get('/admin/deception/actors?page=1&page_size=100&active_only=true'),
+      ]);
+      setDeceptionEvents(eventsRes.data || []);
+      setDeceptionActors(actorsRes.data || []);
+    } catch (err) {
+      console.error('Deception telemetry error:', err);
+    }
+  };
+
   const mineBlock = async () => {
     setMining(true);
     try {
@@ -141,7 +161,7 @@ export default function AdminDashboard() {
     const token = prompt('Enter your TOTP code to download this resume:');
     if (!token) return;
     try {
-      const res = await api.get(`/resumes/${resumeId}/download?totp_token=${encodeURIComponent(token)}`, { responseType: 'blob' });
+      const res = await api.get(`/resumes/${resumeId}/download`, { responseType: 'blob', headers: { 'X-TOTP-Token': token } });
       const url = window.URL.createObjectURL(new Blob([res.data]));
       const a = document.createElement('a');
       a.href = url;
@@ -248,12 +268,26 @@ export default function AdminDashboard() {
     }
   };
 
-  const filteredUsers = searchQuery
-    ? users.filter(u =>
-        u.full_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        u.email?.toLowerCase().includes(searchQuery.toLowerCase())
-      )
-    : users;
+  const filteredUsers = users.filter(u => {
+    const q = searchQuery.toLowerCase();
+    const matchesSearch = !q || (
+      u.full_name?.toLowerCase().includes(q) ||
+      u.email?.toLowerCase().includes(q) ||
+      u.ip_address?.toLowerCase().includes(q)
+    );
+    const matchesRole = !roleFilter || u.role === roleFilter;
+    const matchesStatus = !statusFilter ||
+      (statusFilter === 'suspended' && u.is_suspended) ||
+      (statusFilter === 'active' && u.is_active && !u.is_suspended) ||
+      (statusFilter === 'inactive' && !u.is_active && !u.is_suspended);
+    return matchesSearch && matchesRole && matchesStatus;
+  });
+
+  const totalUserPages = Math.ceil(filteredUsers.length / usersPerPage);
+  const paginatedUsers = filteredUsers.slice((userPage - 1) * usersPerPage, userPage * usersPerPage);
+
+  // Reset to page 1 when filters change
+  useEffect(() => { setUserPage(1); }, [searchQuery, roleFilter, statusFilter]);
 
   if (!verified) {
     return (
@@ -279,6 +313,9 @@ export default function AdminDashboard() {
     { label: 'Suspended', value: dashboard?.suspended_users || 0, icon: UserX, color: 'red' },
     { label: 'Total Jobs', value: dashboard?.total_jobs || 0, icon: BarChart3, color: 'indigo' },
     { label: 'Audit Logs', value: dashboard?.total_audit_logs || 0, icon: FileText, color: 'purple' },
+    { label: 'Threat Events (Today)', value: dashboard?.deception_events_today || 0, icon: AlertTriangle, color: 'orange' },
+    { label: 'Active Timeouts', value: dashboard?.deception_active_timeouts || 0, icon: Shield, color: 'red' },
+    { label: 'High-Risk Actors', value: dashboard?.deception_high_risk_actors || 0, icon: AlertTriangle, color: 'orange' },
   ];
 
   const colorMap = {
@@ -287,6 +324,7 @@ export default function AdminDashboard() {
     red: 'bg-red-50 text-red-600',
     indigo: 'bg-indigo-50 text-indigo-600',
     purple: 'bg-purple-50 text-purple-600',
+    orange: 'bg-orange-50 text-orange-600',
   };
 
   return (
@@ -301,6 +339,7 @@ export default function AdminDashboard() {
         {[
           { key: 'overview', label: 'Overview', icon: BarChart3 },
           { key: 'users', label: 'Users', icon: Users },
+          { key: 'threats', label: 'Threats', icon: AlertTriangle },
           { key: 'jobs', label: 'Jobs', icon: Briefcase },
           { key: 'resumes', label: 'Resumes', icon: Download },
           { key: 'announcements', label: 'Announcements', icon: Megaphone },
@@ -319,7 +358,7 @@ export default function AdminDashboard() {
 
       {/* Overview */}
       {tab === 'overview' && (
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-8 gap-4">
           {statCards.map(card => (
             <div key={card.label} className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
               <div className={`w-10 h-10 rounded-lg flex items-center justify-center mb-3 ${colorMap[card.color]}`}>
@@ -332,23 +371,134 @@ export default function AdminDashboard() {
         </div>
       )}
 
+      {/* Threats */}
+      {tab === 'threats' && (
+        <div className="space-y-6">
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+            <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-gray-900">Actor Threat State</h3>
+              <button onClick={fetchDeception}
+                className="px-3 py-1.5 text-xs font-medium rounded-lg border border-gray-300 hover:bg-gray-50">
+                Refresh
+              </button>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[900px]">
+                <thead>
+                  <tr className="bg-gray-50 border-b border-gray-100">
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Actor</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">User / IP</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Score</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Timeout</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Last Endpoint</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Last Event</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {deceptionActors.map(a => (
+                    <tr key={a.actor_id} className="hover:bg-gray-50">
+                      <td className="px-4 py-3 font-mono text-xs text-gray-600">{a.actor_id.slice(0, 20)}...</td>
+                      <td className="px-4 py-3 text-sm text-gray-700">
+                        <div>{a.user_id ? `User: ${a.user_id}` : 'Anonymous'}</div>
+                        <div className="text-xs text-gray-400">{a.ip_address}</div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${
+                          a.threat_level === 'high' ? 'bg-red-50 text-red-700' :
+                          a.threat_level === 'medium' ? 'bg-orange-50 text-orange-700' :
+                          'bg-yellow-50 text-yellow-700'
+                        }`}>
+                          {a.threat_score} ({a.threat_level})
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-600">
+                        {a.is_timed_out ? (
+                          <span className="text-red-600 font-medium">Active until {toISTDateTime(a.timeout_until)}</span>
+                        ) : 'None'}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-gray-600">{a.last_endpoint || '—'}</td>
+                      <td className="px-4 py-3 text-sm text-gray-600">{a.last_event_at ? toISTDateTime(a.last_event_at) : '—'}</td>
+                    </tr>
+                  ))}
+                  {deceptionActors.length === 0 && (
+                    <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400">No suspicious actors yet</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+            <div className="px-6 py-4 border-b border-gray-100">
+              <h3 className="text-lg font-semibold text-gray-900">Recent Deception Events</h3>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[1000px]">
+                <thead>
+                  <tr className="bg-gray-50 border-b border-gray-100">
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Time</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Endpoint</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Method/Event</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">IP</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Score</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">User Agent</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-50">
+                  {deceptionEvents.map(e => (
+                    <tr key={e.id} className="hover:bg-gray-50">
+                      <td className="px-4 py-3 text-sm text-gray-600">{toISTDateTime(e.created_at)}</td>
+                      <td className="px-4 py-3 text-sm font-mono text-gray-700">{e.endpoint}</td>
+                      <td className="px-4 py-3 text-sm text-gray-700">{e.method} / {e.event_type}</td>
+                      <td className="px-4 py-3 text-sm text-gray-600">{e.ip_address}</td>
+                      <td className="px-4 py-3 text-sm text-gray-700">+{e.score_delta} → {e.score_after}</td>
+                      <td className="px-4 py-3 text-xs text-gray-500">{e.user_agent || '—'}</td>
+                    </tr>
+                  ))}
+                  {deceptionEvents.length === 0 && (
+                    <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400">No deception events recorded</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Users */}
       {tab === 'users' && (
         <div>
-          <div className="flex gap-2 mb-4">
-            <div className="relative flex-1">
+          <div className="flex gap-2 mb-4 flex-wrap">
+            <div className="relative flex-1 min-w-[200px]">
               <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
               <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Filter users by name or email..." maxLength={100}
+                placeholder="Search by name, email or IP..." maxLength={100}
                 className="w-full pl-9 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none text-sm" />
             </div>
+            <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)}
+              className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 outline-none">
+              <option value="">All Roles</option>
+              <option value="user">User</option>
+              <option value="recruiter">Recruiter</option>
+              <option value="admin">Admin</option>
+              <option value="platform_admin">Platform Admin</option>
+            </select>
+            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}
+              className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 outline-none">
+              <option value="">All Status</option>
+              <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
+              <option value="suspended">Suspended</option>
+            </select>
+            <span className="self-center text-xs text-gray-400">{filteredUsers.length} of {users.length} users</span>
           </div>
 
           {loading ? (
             <div className="text-center py-12 text-gray-400">Loading users...</div>
           ) : (
-            <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-              <table className="w-full">
+            <>
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-x-auto">
+              <table className="w-full min-w-[700px]">
                 <thead>
                   <tr className="bg-gray-50 border-b border-gray-100">
                     <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">User</th>
@@ -359,12 +509,12 @@ export default function AdminDashboard() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
-                  {filteredUsers.map(u => (
+                  {paginatedUsers.map(u => (
                     <tr key={u.id} className="hover:bg-gray-50 transition">
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3 max-w-[200px]">
                         <div>
-                          <p className="font-medium text-gray-900 text-sm">{u.full_name}</p>
-                          <p className="text-xs text-gray-400">{u.email}</p>
+                          <p className="font-medium text-gray-900 text-sm truncate" title={u.full_name}>{u.full_name}</p>
+                          <p className="text-xs text-gray-400 truncate" title={u.email}>{u.email}</p>
                         </div>
                       </td>
                       <td className="px-4 py-3">
@@ -422,6 +572,24 @@ export default function AdminDashboard() {
                 </tbody>
               </table>
             </div>
+            {totalUserPages > 1 && (
+              <div className="flex items-center justify-between mt-4 px-1">
+                <span className="text-sm text-gray-500">
+                  Page {userPage} of {totalUserPages} ({filteredUsers.length} users)
+                </span>
+                <div className="flex gap-2">
+                  <button onClick={() => setUserPage(p => Math.max(1, p - 1))} disabled={userPage === 1}
+                    className="flex items-center gap-1 px-3 py-1.5 text-sm font-medium rounded-lg border border-gray-300 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed">
+                    <ChevronLeft className="h-4 w-4" /> Previous
+                  </button>
+                  <button onClick={() => setUserPage(p => Math.min(totalUserPages, p + 1))} disabled={userPage === totalUserPages}
+                    className="flex items-center gap-1 px-3 py-1.5 text-sm font-medium rounded-lg border border-gray-300 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed">
+                    Next <ChevronRight className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            )}
+            </>
           )}
         </div>
       )}

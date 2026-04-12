@@ -4,12 +4,14 @@ Loads settings from .env using pydantic-settings.
 """
 
 from pydantic import field_validator
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import List
 import json
 
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+
     # Database
     DATABASE_URL: str = "postgresql+asyncpg://vajrakavach:changeme@localhost:5432/vajrakavach_db"
 
@@ -36,8 +38,21 @@ class Settings(BaseSettings):
     CORS_ORIGINS: str = '["http://localhost:5173","http://localhost:3000"]'
     UPLOAD_DIR: str = "uploads"
     DEBUG: bool = False
+    DECEPTION_DEMO_MODE: bool = False
+    DECEPTION_ACCESS_SCORE: int = 15
+    DECEPTION_SUBMIT_SCORE: int = 10
+    DECEPTION_REPEAT_SCORE: int = 10
+    DECEPTION_WARNING_THRESHOLD: int = 21   # score > 20
+    DECEPTION_DELAY_THRESHOLD: int = 31     # score > 30
+    DECEPTION_TIMEOUT_THRESHOLD: int = 41   # score > 40
+    DECEPTION_REPEAT_WINDOW_SECONDS: int = 300
+    DECEPTION_DECAY_POINTS: int = 5
+    DECEPTION_DECAY_INTERVAL_MINUTES: int = 20
+    DECEPTION_DELAY_SECONDS: int = 2
+    DECEPTION_TIMEOUT_MINUTES: int = 10
+    DECEPTION_PAYLOAD_HASH_MAX_LEN: int = 4096
 
-    @field_validator("DEBUG", mode="before")
+    @field_validator("DEBUG", "DECEPTION_DEMO_MODE", mode="before")
     @classmethod
     def parse_debug_flag(cls, value):
         """Accept common env-style debug strings instead of crashing on startup."""
@@ -54,10 +69,5 @@ class Settings(BaseSettings):
     @property
     def cors_origins_list(self) -> List[str]:
         return json.loads(self.CORS_ORIGINS)
-
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-
 
 settings = Settings()

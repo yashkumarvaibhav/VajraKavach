@@ -5,6 +5,8 @@ FastAPI application with all routes, middleware, and startup events.
 
 import os
 import logging
+import asyncio
+import socket
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -14,7 +16,11 @@ from fastapi.openapi.docs import get_swagger_ui_html
 
 from app.config import settings
 from app.database import init_db
-from app.middleware.security import SecurityHeadersMiddleware, RequestIDMiddleware, RateLimitMiddleware
+from app.middleware.security import (
+    RequestIDMiddleware,
+    RateLimitMiddleware,
+    DeceptionEnforcementMiddleware,
+)
 from app.middleware.audit import AuditMiddleware
 
 # Routes
@@ -27,6 +33,8 @@ from app.routes.messages import router as messages_router
 from app.routes.resumes import router as resumes_router
 from app.routes.admin import router as admin_router
 from app.routes.reports import router as reports_router
+from app.routes.websocket import router as ws_router
+from app.routes.deception import router as deception_router
 
 # Configure logging
 logging.basicConfig(
@@ -34,6 +42,34 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 logger = logging.getLogger("vajrakavach")
+
+
+def _sd_notify(state: str):
+    """Send a notification to systemd via the NOTIFY_SOCKET (sd_notify protocol)."""
+    addr = os.environ.get("NOTIFY_SOCKET")
+    if not addr:
+        return
+    if addr[0] == "@":
+        addr = "\0" + addr[1:]
+    try:
+        sock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+        sock.connect(addr)
+        sock.sendall(state.encode())
+        sock.close()
+    except Exception as exc:
+        logger.debug("sd_notify failed: %s", exc)
+
+
+async def _watchdog_loop():
+    """Periodically send watchdog keepalive to systemd.
+    If this loop stops (process hangs), systemd kills and restarts the process."""
+    interval = int(os.environ.get("WATCHDOG_USEC", "0")) / 1_000_000 / 2
+    if interval <= 0:
+        return  # Watchdog not configured
+    logger.info(f"Watchdog keepalive active (every {interval:.0f}s)")
+    while True:
+        _sd_notify("WATCHDOG=1")
+        await asyncio.sleep(interval)
 
 
 @asynccontextmanager
@@ -72,7 +108,50 @@ async def lifespan(app: FastAPI):
     await init_db()
     logger.info("Database tables created/verified.")
 
+    # Load persistent security state from DB (survives restarts)
+    from app.database import async_session
+    from app.services.auth_service import load_revoked_cache, cleanup_expired_tokens
+    from app.services.totp_service import load_totp_lockout_from_db
+    async with async_session() as db:
+        try:
+            await load_revoked_cache(db)
+            await load_totp_lockout_from_db(db)
+            await cleanup_expired_tokens(db)
+            await db.commit()
+            logger.info("Persistent security state loaded from database.")
+        except Exception as e:
+            logger.warning(f"Could not load security state from DB (tables may not exist yet): {e}")
+            await db.rollback()
+
+    # Notify systemd that startup is complete
+    _sd_notify("READY=1")
+
+    # Start watchdog keepalive task
+    watchdog_task = asyncio.create_task(_watchdog_loop())
+
     yield
+
+    # Cancel watchdog
+    watchdog_task.cancel()
+    try:
+        await watchdog_task
+    except asyncio.CancelledError:
+        pass
+
+    # Notify systemd we're stopping
+    _sd_notify("STOPPING=1")
+
+    # Persist security state on shutdown
+    from app.services.auth_service import flush_pending_revocations
+    from app.services.totp_service import sync_totp_lockout_to_db
+    async with async_session() as db:
+        try:
+            await flush_pending_revocations(db)
+            await sync_totp_lockout_to_db(db)
+            await db.commit()
+            logger.info("Security state persisted to database.")
+        except Exception:
+            await db.rollback()
 
     logger.info("VajraKavach shutting down.")
 
@@ -107,19 +186,24 @@ if settings.DEBUG:
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins_list,
+    allow_origin_regex=r"^https://192\.168\.\d{1,3}\.\d{1,3}(:\d+)?$",
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-    allow_headers=["Content-Type", "Authorization", "X-Request-ID"],
+    allow_headers=["Content-Type", "Authorization"],
 )
 
-# Security headers
-app.add_middleware(SecurityHeadersMiddleware)
+# Security headers: handled by nginx reverse proxy (add_header ... always)
+# SecurityHeadersMiddleware kept as class but not registered to avoid duplicate headers.
+# Defense-in-depth: nginx binds to 443, backend binds to 127.0.0.1:8000 only.
 
-# Request ID tracing
+# Request ID tracing (internal only — not exposed in response headers)
 app.add_middleware(RequestIDMiddleware)
 
-# Rate limiting (60 req/min per IP)
-app.add_middleware(RateLimitMiddleware, requests_per_minute=60)
+# Adaptive deception enforcement (phase 2/3: delay + temporary timeout)
+app.add_middleware(DeceptionEnforcementMiddleware)
+
+# Rate limiting (60 req/min per IP, 5 req/min on auth endpoints)
+app.add_middleware(RateLimitMiddleware, requests_per_minute=60, auth_requests_per_minute=5)
 
 # Audit logging
 app.add_middleware(AuditMiddleware)
@@ -135,6 +219,8 @@ app.include_router(messages_router)
 app.include_router(resumes_router)
 app.include_router(admin_router)
 app.include_router(reports_router)
+app.include_router(ws_router)
+app.include_router(deception_router)
 
 
 # ── Root endpoint ────────────────────────────────────────────────────
@@ -148,5 +234,6 @@ async def root():
 
 
 @app.get("/health")
+@app.get("/api/health")
 async def health_check():
     return {"status": "healthy"}

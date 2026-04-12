@@ -11,6 +11,13 @@ from app.models.announcement import Announcement
 from app.models.audit import AuditLog
 from app.models.audit_block import AuditBlock
 from app.models.report import Report
+from app.models.security_state import (
+    RevokedToken,
+    TOTPLockout,
+    DeceptionActorState,
+    DeceptionEvent,
+)
+from app.models.action_rate_limit import ActionRateLimit
 
 __all__ = [
     "User",
@@ -24,4 +31,7 @@ __all__ = [
     "Conversation",
     "AuditLog",
     "Report",
+    "ActionRateLimit",
+    "DeceptionActorState",
+    "DeceptionEvent",
 ]

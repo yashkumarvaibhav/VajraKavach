@@ -3,6 +3,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import { Users, Search, UserPlus, UserCheck, Clock, Send, Network, X, Trash2 } from 'lucide-react';
+import Pagination from '../components/Pagination';
 
 /** Enhanced force-directed SVG graph for connection visualization */
 function NetworkGraph({ nodes, edges, currentUserId, userName, onNodeClick }) {
@@ -300,6 +301,8 @@ export default function ConnectionsPage() {
   const [searching, setSearching] = useState(false);
   const [loading, setLoading] = useState(true);
   const [graph, setGraph] = useState(null);
+  const [connPage, setConnPage] = useState(1);
+  const perPage = 20;
 
   const fetchAll = useCallback(async () => {
     setLoading(true);
@@ -478,7 +481,7 @@ export default function ConnectionsPage() {
                   <Users className="h-12 w-12 mx-auto mb-3 opacity-30" />
                   <p>No connections yet. Find people to connect with!</p>
                 </div>
-              ) : connections.map(conn => {
+              ) : connections.slice((connPage - 1) * perPage, connPage * perPage).map(conn => {
                 const p = getPartnerInfo(conn);
                 return <PersonCard key={conn.id} userId={p.id} name={p.name} headline={p.headline} picture={p.picture}
                   actions={
@@ -489,6 +492,8 @@ export default function ConnectionsPage() {
                   }
                 />;
               })}
+              <Pagination currentPage={connPage} totalPages={Math.ceil(connections.length / perPage)}
+                totalItems={connections.length} onPageChange={setConnPage} itemLabel="connections" />
             </div>
           )}
 

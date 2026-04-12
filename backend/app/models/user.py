@@ -42,6 +42,7 @@ class User(Base):
     # Account state
     is_active = Column(Boolean, default=True)
     is_suspended = Column(Boolean, default=False)
+    force_reauth_at = Column(DateTime, nullable=True)  # Invalidate all sessions issued before this time
     last_login = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

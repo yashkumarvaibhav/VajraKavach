@@ -38,7 +38,7 @@ class PromoteAdminRequest(BaseModel):
 @router.get("/users", response_model=list[UserResponse])
 async def list_all_users(
     page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
+    page_size: int = Query(20, ge=1, le=500),
     role: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role("admin", "platform_admin")),
@@ -396,6 +396,8 @@ async def admin_dashboard(
 
 @router.get("/jobs")
 async def admin_list_jobs(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role("admin", "platform_admin")),
 ):
@@ -403,10 +405,12 @@ async def admin_list_jobs(
     from app.models.job import Job
     from app.models.company import Company
 
+    offset = (page - 1) * page_size
     result = await db.execute(
         select(Job, Company.name.label("company_name"))
         .join(Company, Job.company_id == Company.id)
         .order_by(Job.created_at.desc())
+        .offset(offset).limit(page_size)
     )
     rows = result.all()
 
@@ -459,15 +463,19 @@ async def admin_delist_job(
 
 @router.get("/resumes")
 async def list_all_resumes(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role("admin", "platform_admin")),
 ):
     """List all resumes. Download requires TOTP via /api/resumes/{id}/download."""
     from app.models.resume import Resume
+    offset = (page - 1) * page_size
     result = await db.execute(
         select(Resume, User.full_name, User.email)
         .join(User, Resume.user_id == User.id)
         .order_by(Resume.uploaded_at.desc())
+        .offset(offset).limit(page_size)
     )
     rows = result.all()
     return [

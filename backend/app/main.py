@@ -44,6 +44,8 @@ def _sd_notify(state: str):
     addr = os.environ.get("NOTIFY_SOCKET")
     if not addr:
         return
+    if addr[0] == "@":
+        addr = "\0" + addr[1:]
     try:
         sock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
         sock.connect(addr)
@@ -56,9 +58,9 @@ def _sd_notify(state: str):
 async def _watchdog_loop():
     """Periodically send watchdog keepalive to systemd.
     If this loop stops (process hangs), systemd kills and restarts the process."""
-    interval = int(os.environ.get("WATCHDOG_USEC", "0")) / 1000000 / 2
+    interval = int(os.environ.get("WATCHDOG_USEC", "0")) / 1_000_000 / 2
     if interval <= 0:
-        return
+        return  # Watchdog not configured
     logger.info(f"Watchdog keepalive active (every {interval:.0f}s)")
     while True:
         _sd_notify("WATCHDOG=1")
@@ -101,24 +103,25 @@ async def lifespan(app: FastAPI):
     await init_db()
     logger.info("Database tables created/verified.")
 
-    # Load persistent security state from database
-    try:
-        from app.database import async_session
-        from app.services.auth_service import load_revoked_cache, cleanup_expired_tokens
-        from app.services.totp_service import load_totp_lockout_from_db
-        async with async_session() as db:
+    # Load persistent security state from DB (survives restarts)
+    from app.database import async_session
+    from app.services.auth_service import load_revoked_cache, cleanup_expired_tokens
+    from app.services.totp_service import load_totp_lockout_from_db
+    async with async_session() as db:
+        try:
             await load_revoked_cache(db)
-            await cleanup_expired_tokens(db)
             await load_totp_lockout_from_db(db)
+            await cleanup_expired_tokens(db)
             await db.commit()
-        logger.info("Persistent security state loaded from database.")
-    except Exception as e:
-        logger.warning(f"Could not load security state from DB (tables may not exist yet): {e}")
+            logger.info("Persistent security state loaded from database.")
+        except Exception as e:
+            logger.warning(f"Could not load security state from DB (tables may not exist yet): {e}")
+            await db.rollback()
 
-    # Notify systemd we're ready
+    # Notify systemd that startup is complete
     _sd_notify("READY=1")
 
-    # Start watchdog keepalive loop
+    # Start watchdog keepalive task
     watchdog_task = asyncio.create_task(_watchdog_loop())
 
     yield
@@ -133,18 +136,17 @@ async def lifespan(app: FastAPI):
     # Notify systemd we're stopping
     _sd_notify("STOPPING=1")
 
-    # Persist security state before shutdown
-    try:
-        from app.database import async_session
-        from app.services.auth_service import flush_pending_revocations
-        from app.services.totp_service import sync_totp_lockout_to_db
-        async with async_session() as db:
+    # Persist security state on shutdown
+    from app.services.auth_service import flush_pending_revocations
+    from app.services.totp_service import sync_totp_lockout_to_db
+    async with async_session() as db:
+        try:
             await flush_pending_revocations(db)
             await sync_totp_lockout_to_db(db)
             await db.commit()
-        logger.info("Security state persisted to database.")
-    except Exception:
-        pass
+            logger.info("Security state persisted to database.")
+        except Exception:
+            await db.rollback()
 
     logger.info("VajraKavach shutting down.")
 
@@ -185,10 +187,14 @@ app.add_middleware(
     allow_headers=["Content-Type", "Authorization"],
 )
 
-# Request ID tracing
+# Security headers: handled by nginx reverse proxy (add_header ... always)
+# SecurityHeadersMiddleware kept as class but not registered to avoid duplicate headers.
+# Defense-in-depth: nginx binds to 443, backend binds to 127.0.0.1:8000 only.
+
+# Request ID tracing (internal only — not exposed in response headers)
 app.add_middleware(RequestIDMiddleware)
 
-# Rate limiting (60 req/min per IP, 5 req/min for auth endpoints)
+# Rate limiting (60 req/min per IP, 5 req/min on auth endpoints)
 app.add_middleware(RateLimitMiddleware, requests_per_minute=60, auth_requests_per_minute=5)
 
 # Audit logging

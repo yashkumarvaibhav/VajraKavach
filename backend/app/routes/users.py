@@ -6,7 +6,7 @@ Profile CRUD, connections, profile viewing, connection graph.
 import uuid
 import os
 import aiofiles
-from fastapi import APIRouter, Depends, HTTPException, status, Request, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, status, Request, UploadFile, File, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_, and_, func
 
@@ -25,6 +25,7 @@ from app.utils.ip import get_client_ip
 from app.utils.sanitize import escape_like
 from app.config import settings
 from app.services.encryption_service import decrypt_data
+from app.services.action_rate_limit_service import check_action_rate_limit, record_action
 
 router = APIRouter(prefix="/api/users", tags=["Users & Profiles"])
 
@@ -84,11 +85,14 @@ async def _enrich_connection(db, conn, current_user_id):
 
 @router.get("/search", response_model=list[UserSearchResponse])
 async def search_users(
-    q: str = "",
+    q: str = Query("", max_length=200),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """Search users by name or email (excludes admins from results)."""
+    await check_action_rate_limit(db, "search_query", str(current_user.id))
+    await record_action(db, "search_query", str(current_user.id))
+
     query = select(User).where(
         User.is_active == True,
         User.id != current_user.id,
@@ -141,6 +145,20 @@ async def update_my_account(
     if update.full_name is not None:
         current_user.full_name = update.full_name
     if update.phone is not None:
+        if update.phone:
+            phone_exists = await db.execute(
+                select(User).where(
+                    User.phone == update.phone,
+                    User.phone != "",
+                    User.phone.isnot(None),
+                    User.id != current_user.id,
+                )
+            )
+            if phone_exists.scalar_one_or_none():
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="This phone number is already registered with another account.",
+                )
         current_user.phone = update.phone
 
     await db.flush()
@@ -251,7 +269,7 @@ IMAGE_MAGIC_BYTES = {
     b'GIF89a': 'gif',              # GIF89
     b'RIFF': 'webp',               # WebP (RIFF container)
 }
-MAX_IMAGE_SIZE = 5 * 1024 * 1024  # 5 MB
+MAX_IMAGE_SIZE = 2 * 1024 * 1024  # 2 MB
 
 @router.post("/me/profile-picture")
 async def upload_profile_picture(
@@ -260,13 +278,15 @@ async def upload_profile_picture(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Upload a profile picture (max 5 MB, jpg/png/webp/gif)."""
+    """Upload a profile picture (max 2 MB, jpg/png/webp/gif)."""
+    await check_action_rate_limit(db, "profile_picture_upload", str(current_user.id))
+
     if file.content_type not in ALLOWED_IMAGE_TYPES:
         raise HTTPException(status_code=400, detail="Only JPEG, PNG, WebP, and GIF images are allowed")
 
     contents = await file.read()
     if len(contents) > MAX_IMAGE_SIZE:
-        raise HTTPException(status_code=400, detail="Image must be under 5 MB")
+        raise HTTPException(status_code=400, detail="Image must be under 2 MB")
 
     # Validate magic bytes
     magic_valid = False
@@ -308,12 +328,17 @@ async def upload_profile_picture(
         ip_address=get_client_ip(request),
     )
 
+    await record_action(db, "profile_picture_upload", str(current_user.id))
+
     return {"url": f"/api/users/me/profile-picture/{filename}"}
 
 
 @router.get("/me/profile-picture/{filename}")
-async def get_profile_picture(filename: str):
-    """Serve a profile picture file."""
+async def get_profile_picture(
+    filename: str,
+    current_user: User = Depends(get_current_user),
+):
+    """Serve a profile picture file (authenticated users only)."""
     from fastapi.responses import FileResponse
     # Prevent path traversal: strip directory separators and validate
     safe_name = os.path.basename(filename)
@@ -325,7 +350,43 @@ async def get_profile_picture(filename: str):
         raise HTTPException(status_code=400, detail="Invalid filename")
     if not os.path.isfile(filepath):
         raise HTTPException(status_code=404, detail="Image not found")
-    return FileResponse(filepath)
+    return FileResponse(filepath, headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
+
+
+@router.delete("/me/profile-picture")
+async def delete_profile_picture(
+    request: Request = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Delete the current user's profile picture."""
+    result = await db.execute(
+        select(UserProfile).where(UserProfile.user_id == current_user.id)
+    )
+    profile = result.scalar_one_or_none()
+    if not profile or not profile.profile_picture_url:
+        raise HTTPException(status_code=404, detail="No profile picture to delete")
+
+    # Extract filename from URL and delete the file
+    filename = os.path.basename(profile.profile_picture_url)
+    avatar_dir = os.path.realpath(os.path.join(settings.UPLOAD_DIR, "avatars"))
+    filepath = os.path.realpath(os.path.join(avatar_dir, filename))
+    if filepath.startswith(avatar_dir) and os.path.isfile(filepath):
+        os.remove(filepath)
+
+    profile.profile_picture_url = None
+    await db.flush()
+
+    await create_audit_log(
+        db=db,
+        action="user.profile_picture_delete",
+        user_id=str(current_user.id),
+        resource="user_profile",
+        details={"filename": filename},
+        ip_address=get_client_ip(request),
+    )
+
+    return {"detail": "Profile picture deleted"}
 
 
 # ── Profile ──────────────────────────────────────────────────────────
@@ -356,6 +417,7 @@ async def get_my_profile(
         user_id=str(profile.user_id),
         full_name=current_user.full_name,
         email=current_user.email,
+        phone=current_user.phone,
         headline=profile.headline,
         location=profile.location,
         bio=profile.bio,
@@ -414,6 +476,7 @@ async def update_my_profile(
         user_id=str(profile.user_id),
         full_name=current_user.full_name,
         email=current_user.email,
+        phone=current_user.phone,
         headline=profile.headline,
         location=profile.location,
         bio=profile.bio,
@@ -435,6 +498,9 @@ async def view_user_profile(
     current_user: User = Depends(get_current_user),
 ):
     """View another user's profile (respects privacy settings)."""
+    await check_action_rate_limit(db, "profile_view", str(current_user.id))
+    await record_action(db, "profile_view", str(current_user.id))
+
     result = await db.execute(
         select(UserProfile).where(UserProfile.user_id == user_id)
     )
@@ -582,6 +648,8 @@ async def send_connection_request(
     current_user: User = Depends(get_current_user),
 ):
     """Send a professional connection request."""
+    await check_action_rate_limit(db, "connection_request", str(current_user.id))
+
     if str(current_user.id) == req.addressee_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot connect to yourself")
 
@@ -613,6 +681,8 @@ async def send_connection_request(
         resource_id=str(conn.id),
         ip_address=get_client_ip(request),
     )
+
+    await record_action(db, "connection_request", str(current_user.id))
 
     return await _enrich_connection(db, conn, str(current_user.id))
 
@@ -759,7 +829,6 @@ async def connection_graph(
 
     # Also find connections BETWEEN my connections (mutual connections)
     if connected_ids:
-        from sqlalchemy import cast
         mutual_result = await db.execute(
             select(Connection).where(
                 and_(

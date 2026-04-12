@@ -18,6 +18,8 @@ class Company(Base):
     description = Column(Text, nullable=True)
     location = Column(String(255), nullable=True)
     website = Column(String(512), nullable=True)
+    industry = Column(String(255), nullable=True)
+    size = Column(String(100), nullable=True)
     is_verified = Column(Boolean, default=False)
 
     # Who created / administers this company page

@@ -53,6 +53,18 @@ export default function ResumePage() {
     setUploading(true);
     setError('');
     try {
+      // If replacing an existing resume, delete the old one first
+      if (resume?.id) {
+        const totpCode = prompt('Enter your TOTP code to replace the existing resume:');
+        if (!totpCode) { setUploading(false); return; }
+        try {
+          await api.delete(`/resumes/${resume.id}`, { headers: { 'X-TOTP-Token': totpCode } });
+        } catch (delErr) {
+          setError(delErr.response?.data?.detail || 'Failed to remove old resume. Check your TOTP code.');
+          setUploading(false);
+          return;
+        }
+      }
       const formData = new FormData();
       formData.append('file', file);
       await api.post('/resumes/upload', formData, {
@@ -78,8 +90,9 @@ export default function ResumePage() {
     setDownloading(true);
     setError('');
     try {
-      const res = await api.get(`/resumes/${resume.id}/download?totp_token=${totpToken}`, {
+      const res = await api.get(`/resumes/${resume.id}/download`, {
         responseType: 'blob',
+        headers: { 'X-TOTP-Token': totpToken },
       });
       const url = URL.createObjectURL(res.data);
       const a = document.createElement('a');
@@ -109,7 +122,7 @@ export default function ResumePage() {
     if (!token) return;
     if (!confirm('Are you sure you want to permanently delete your resume? This cannot be undone.')) return;
     try {
-      await api.delete(`/resumes/${resume.id}?totp_token=${encodeURIComponent(token)}`);
+      await api.delete(`/resumes/${resume.id}`, { headers: { 'X-TOTP-Token': token } });
       setResume(null);
       setMessage('Resume deleted.');
       setTimeout(() => setMessage(''), 3000);

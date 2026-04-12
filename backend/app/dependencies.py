@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.database import get_db
 from app.models.user import User
-from app.services.auth_service import decode_token
+from app.services.auth_service import decode_token, load_revoked_cache
 from app.utils.ip import get_client_ip
 
 security = HTTPBearer(auto_error=False)
@@ -31,6 +31,9 @@ async def get_current_user(
     db: AsyncSession = Depends(get_db),
 ) -> User:
     """Extract user from Bearer JWT token."""
+    # Periodically refresh revoked token cache from DB (every 30s)
+    await load_revoked_cache(db)
+
     token = _extract_bearer_token(request, credentials)
     if not token:
         raise HTTPException(
@@ -82,6 +85,16 @@ async def get_current_user(
 
     if not user.is_active or user.is_suspended:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account is suspended or deactivated")
+
+    # Check if all sessions were invalidated (e.g. after forgot-password)
+    if user.force_reauth_at:
+        from datetime import datetime
+        token_iat = payload.get("iat")
+        if token_iat and datetime.utcfromtimestamp(token_iat) < user.force_reauth_at:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Session invalidated. Please log in again.",
+            )
 
     return user
 

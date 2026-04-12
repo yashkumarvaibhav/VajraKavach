@@ -18,6 +18,7 @@ from app.schemas.job import JobCreate, JobUpdate, JobResponse
 from app.dependencies import get_current_user, require_role
 from app.services.audit_service import create_audit_log
 from app.utils.ip import get_client_ip
+from app.services.action_rate_limit_service import check_action_rate_limit, record_action
 from app.utils.sanitize import escape_like
 
 router = APIRouter(prefix="/api/jobs", tags=["Jobs"])
@@ -53,6 +54,8 @@ async def create_job(
     current_user: User = Depends(require_role("recruiter", "platform_admin")),
 ):
     """Post a new job listing."""
+    await check_action_rate_limit(db, "job_create", str(current_user.id))
+
     result = await db.execute(select(Company).where(Company.id == req.company_id))
     company = result.scalar_one_or_none()
     if not company:
@@ -87,7 +90,7 @@ async def create_job(
         details={"title": req.title, "company_id": req.company_id},
         ip_address=get_client_ip(request),
     )
-
+    await record_action(db, "job_create", str(current_user.id))
     return _job_response(job, company_name=company.name)
 
 
@@ -133,18 +136,21 @@ async def my_jobs(
 
 @router.get("/search", response_model=list[JobResponse])
 async def search_jobs(
-    keyword: Optional[str] = Query(None),
-    company: Optional[str] = Query(None),
-    location: Optional[str] = Query(None),
-    location_type: Optional[str] = Query(None),
-    job_type: Optional[str] = Query(None),
-    skills: Optional[str] = Query(None, description="Comma-separated skill tags"),
+    keyword: Optional[str] = Query(None, max_length=200),
+    company: Optional[str] = Query(None, max_length=255),
+    location: Optional[str] = Query(None, max_length=255),
+    location_type: Optional[str] = Query(None, max_length=20),
+    job_type: Optional[str] = Query(None, max_length=20),
+    skills: Optional[str] = Query(None, max_length=500, description="Comma-separated skill tags"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """Search jobs with filters."""
+    await check_action_rate_limit(db, "search_query", str(current_user.id))
+    await record_action(db, "search_query", str(current_user.id))
+
     query = select(Job, Company.name.label("company_name")).join(Company, Job.company_id == Company.id).where(Job.is_active == True)
 
     if keyword:

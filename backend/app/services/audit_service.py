@@ -9,7 +9,7 @@ import uuid
 from datetime import datetime
 from typing import Optional
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, desc
+from sqlalchemy import select, desc, text
 from app.models.audit import AuditLog
 
 
@@ -31,13 +31,17 @@ def _compute_entry_hash(
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
-async def get_last_hash(db: AsyncSession) -> str:
-    """Retrieve the hash of the most recent audit log entry."""
-    result = await db.execute(
+async def get_last_hash(db: AsyncSession, lock: bool = False) -> str:
+    """Retrieve the hash of the most recent audit log entry.
+    When lock=True, uses SELECT ... FOR UPDATE to prevent race conditions."""
+    stmt = (
         select(AuditLog.entry_hash)
         .order_by(desc(AuditLog.created_at))
         .limit(1)
     )
+    if lock:
+        stmt = stmt.with_for_update()
+    result = await db.execute(stmt)
     row = result.scalar_one_or_none()
     return row if row else GENESIS_HASH
 
@@ -51,7 +55,7 @@ async def create_audit_log(
     details: Optional[dict] = None,
     ip_address: Optional[str] = None,
 ) -> AuditLog:
-    previous_hash = await get_last_hash(db)
+    previous_hash = await get_last_hash(db, lock=True)
 
     # CRITICAL: Use the SAME datetime object for both hash and DB field
     now = datetime.utcnow()

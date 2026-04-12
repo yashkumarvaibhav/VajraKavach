@@ -58,7 +58,8 @@ export default function ViewProfilePage() {
   };
 
   const startConversation = () => {
-    navigate('/messages');
+    const name = profile?.full_name || 'User';
+    navigate(`/messages?newConv=${userId}&name=${encodeURIComponent(name)}`);
   };
 
   if (loading) {
@@ -114,7 +115,7 @@ export default function ViewProfilePage() {
               {profile.email && (
                 <span className="flex items-center gap-1"><Mail className="h-3.5 w-3.5" />{profile.email}</span>
               )}
-              {profile.website && (
+              {profile.website && (/^https?:\/\//i.test(profile.website) || !/^[a-z]+:/i.test(profile.website)) && (
                 <a href={profile.website.startsWith('http') ? profile.website : `https://${profile.website}`}
                   target="_blank" rel="noopener noreferrer"
                   className="flex items-center gap-1 text-primary-600 hover:underline">

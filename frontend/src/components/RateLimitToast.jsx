@@ -1,44 +1,54 @@
-import { useState, useEffect } from 'react';
-import { AlertTriangle } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { AlertTriangle, X } from 'lucide-react';
+
+const toasts = [];
+let addToastGlobal = null;
 
 /**
- * Toast notification for rate limit (HTTP 429) errors.
- * Auto-dismisses after a configurable duration.
+ * Show a global rate-limit toast notification.
+ * Called from the API interceptor.
  */
-export default function RateLimitToast({ message, retryAfter, onDismiss }) {
-  const [visible, setVisible] = useState(true);
+export function showRateLimitToast(message) {
+  if (addToastGlobal) {
+    addToastGlobal(message);
+  }
+}
+
+export default function RateLimitToast() {
+  const [active, setActive] = useState([]);
+
+  const addToast = useCallback((message) => {
+    const id = Date.now() + Math.random();
+    setActive((prev) => [...prev, { id, message }]);
+    setTimeout(() => {
+      setActive((prev) => prev.filter((t) => t.id !== id));
+    }, 8000);
+  }, []);
 
   useEffect(() => {
-    const timeout = setTimeout(() => {
-      setVisible(false);
-      onDismiss?.();
-    }, (retryAfter || 5) * 1000);
-    return () => clearTimeout(timeout);
-  }, [retryAfter, onDismiss]);
+    addToastGlobal = addToast;
+    return () => { addToastGlobal = null; };
+  }, [addToast]);
 
-  if (!visible) return null;
+  if (active.length === 0) return null;
 
   return (
-    <div className="fixed top-4 right-4 z-50 max-w-sm bg-red-50 border border-red-200 rounded-lg shadow-lg p-4 flex items-start gap-3 animate-slide-in">
-      <AlertTriangle className="w-5 h-5 text-red-500 flex-shrink-0 mt-0.5" />
-      <div>
-        <p className="text-sm font-medium text-red-800">Rate Limit Exceeded</p>
-        <p className="text-sm text-red-600 mt-1">
-          {message || 'Too many requests. Please wait before trying again.'}
-        </p>
-        {retryAfter && (
-          <p className="text-xs text-red-500 mt-1">
-            Try again in {retryAfter} seconds
-          </p>
-        )}
-      </div>
-      <button
-        onClick={() => { setVisible(false); onDismiss?.(); }}
-        className="text-red-400 hover:text-red-600 ml-auto"
-        aria-label="Dismiss"
-      >
-        ×
-      </button>
+    <div className="fixed top-4 right-4 z-[9999] flex flex-col gap-2 max-w-sm">
+      {active.map((t) => (
+        <div
+          key={t.id}
+          className="bg-red-600 text-white px-4 py-3 rounded-lg shadow-lg flex items-start gap-3 animate-slide-in"
+        >
+          <AlertTriangle className="w-5 h-5 mt-0.5 flex-shrink-0" />
+          <div className="flex-1 text-sm font-medium">{t.message}</div>
+          <button
+            onClick={() => setActive((prev) => prev.filter((x) => x.id !== t.id))}
+            className="flex-shrink-0 hover:opacity-75"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      ))}
     </div>
   );
 }

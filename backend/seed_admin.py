@@ -20,7 +20,7 @@ from app.services.totp_service import generate_totp_secret, get_totp_uri, genera
 # ─── Seed Admin Credentials ──────────────────────────────────────────
 ADMIN_EMAIL = ""
 ADMIN_PASSWORD = ""
-ADMIN_NAME = "VajraKavach Admin"
+ADMIN_NAME = ""
 
 
 async def seed():

@@ -5,7 +5,7 @@ Secure resume upload (encrypted at rest), download with TOTP verification.
 
 import uuid
 import os
-from fastapi import APIRouter, Depends, HTTPException, status, Request, UploadFile, File, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Request, UploadFile, File, Query, Header
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -18,6 +18,7 @@ from app.dependencies import get_current_user
 from app.services.resume_service import save_encrypted_resume, read_decrypted_resume
 from app.services.pki_service import verify_signature
 from app.services.audit_service import create_audit_log
+from app.services.action_rate_limit_service import check_action_rate_limit, record_action
 from app.utils.ip import get_client_ip
 from app.services.totp_service import verify_totp, decrypt_totp_secret, check_totp_lockout, record_totp_failure, clear_totp_attempts
 
@@ -40,7 +41,17 @@ async def upload_resume(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Upload and encrypt a resume (PDF or DOCX only)."""
+    """Upload and encrypt a resume (PDF or DOCX only). Max 5 per user."""
+    await check_action_rate_limit(db, "resume_upload", str(current_user.id))
+
+    # Prevent storage abuse — max 5 resumes per user
+    from sqlalchemy import func
+    count_result = await db.execute(
+        select(func.count(Resume.id)).where(Resume.user_id == current_user.id)
+    )
+    if (count_result.scalar() or 0) >= 5:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Maximum 5 resumes allowed. Delete an old one first.")
+
     server_key = _load_server_private_key()
 
     try:
@@ -74,6 +85,8 @@ async def upload_resume(
         details={"filename": meta["original_filename"], "hash": meta["file_hash"]},
         ip_address=get_client_ip(request),
     )
+
+    await record_action(db, "resume_upload", str(current_user.id))
 
     return ResumeResponse(
         id=str(resume.id),
@@ -117,23 +130,25 @@ async def my_resumes(
 async def download_resume(
     resume_id: str,
     request: Request,
-    totp_token: str = Query(..., description="TOTP token required for document download"),
+    x_totp_token: str = Header(..., alias="X-TOTP-Token", description="TOTP token required for document download"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Download a resume. Requires TOTP verification. Owner/recruiter/admin access."""
+    """Download a resume. Requires TOTP verification via X-TOTP-Token header. Owner/recruiter/admin access."""
+    totp_token = x_totp_token
     # Verify TOTP first (high-risk action)
     if not current_user.totp_secret:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="TOTP not configured")
 
-    if check_totp_lockout(current_user.email):
+    client_ip = get_client_ip(request)
+    if check_totp_lockout(client_ip):
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Too many failed TOTP attempts. Try again later.")
 
     if not verify_totp(decrypt_totp_secret(current_user.totp_secret), totp_token):
-        record_totp_failure(current_user.email)
+        record_totp_failure(client_ip)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid TOTP token")
 
-    clear_totp_attempts(current_user.email)
+    clear_totp_attempts(client_ip)
 
     result = await db.execute(select(Resume).where(Resume.id == resume_id))
     resume = result.scalar_one_or_none()
@@ -204,6 +219,11 @@ async def verify_resume_integrity(
     if not resume:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Resume not found")
 
+    is_owner = str(resume.user_id) == str(current_user.id)
+    is_admin = current_user.role.value in ("admin", "platform_admin")
+    if not is_owner and not is_admin:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
+
     if not resume.digital_signature:
         return {"verified": False, "message": "No digital signature available for this resume"}
 
@@ -239,23 +259,25 @@ async def verify_resume_integrity(
 async def delete_resume(
     resume_id: str,
     request: Request,
-    totp_token: str = Query(..., description="TOTP token required for resume deletion"),
+    x_totp_token: str = Header(..., alias="X-TOTP-Token", description="TOTP token required for resume deletion"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Delete a resume (owner or admin only). Requires TOTP verification."""
+    """Delete a resume (owner or admin only). Requires TOTP verification via X-TOTP-Token header."""
+    totp_token = x_totp_token
     # Verify TOTP first (sensitive operation)
     if not current_user.totp_secret:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="TOTP not configured")
 
-    if check_totp_lockout(current_user.email):
+    client_ip = get_client_ip(request)
+    if check_totp_lockout(client_ip):
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Too many failed TOTP attempts. Try again later.")
 
     if not verify_totp(decrypt_totp_secret(current_user.totp_secret), totp_token):
-        record_totp_failure(current_user.email)
+        record_totp_failure(client_ip)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid TOTP token")
 
-    clear_totp_attempts(current_user.email)
+    clear_totp_attempts(client_ip)
 
     result = await db.execute(select(Resume).where(Resume.id == resume_id))
     resume = result.scalar_one_or_none()
@@ -334,10 +356,23 @@ async def match_resume_to_job(
     if not resume:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Resume not found")
 
-    # Authorization: owner or admin only
+    # Authorization: owner, admin, or recruiter who owns the job's company
     is_owner = str(resume.user_id) == str(current_user.id)
     is_admin = current_user.role.value in ("admin", "platform_admin")
-    if not (is_owner or is_admin):
+
+    # Check if the current user is a recruiter who owns the company that posted this job
+    is_job_recruiter = False
+    if current_user.role.value == "recruiter":
+        from app.models.company import Company
+        job_check = await db.execute(select(Job).where(Job.id == job_id))
+        job_for_auth = job_check.scalar_one_or_none()
+        if job_for_auth:
+            company_check = await db.execute(
+                select(Company).where(Company.id == job_for_auth.company_id, Company.admin_id == current_user.id)
+            )
+            is_job_recruiter = company_check.scalar_one_or_none() is not None
+
+    if not (is_owner or is_admin or is_job_recruiter):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to access this resume")
 
     job_result = await db.execute(select(Job).where(Job.id == job_id))

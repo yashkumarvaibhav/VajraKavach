@@ -2,10 +2,11 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
-import { MessageSquare, Send, Plus, ArrowLeft, Users, Trash2, X, UserPlus, Lock } from 'lucide-react';
+import { MessageSquare, Send, Plus, ArrowLeft, Users, Trash2, X, UserPlus, Lock, LogOut, Info } from 'lucide-react';
 import { toIST } from '../utils/time';
-import { encryptMessage, encryptGroupMessage, decryptMessage, isEncryptedPayload } from '../utils/crypto';
+import { encryptMessage, encryptGroupMessage, decryptMessage, isEncryptedPayload, signMessage } from '../utils/crypto';
 import { getSessionE2EEKeyPair } from '../utils/e2eeKeyStore';
+import useWebSocket from '../hooks/useWebSocket';
 
 import ReportButton from '../components/ReportButton';
 import KeyManagement from '../components/KeyManagement';
@@ -26,6 +27,8 @@ export default function MessagesPage() {
   const [connections, setConnections] = useState([]);
   const [groupMembers, setGroupMembers] = useState([]);
   const [keysUnavailable, setKeysUnavailable] = useState(false);
+  const [showGroupInfo, setShowGroupInfo] = useState(false);
+  const [showAddMember, setShowAddMember] = useState(false);
   const messagesEndRef = useRef(null);
   const pollRef = useRef(null);
   const convPollRef = useRef(null);
@@ -38,7 +41,14 @@ export default function MessagesPage() {
   const fetchConversations = useCallback(async () => {
     try {
       const res = await api.get('/messages/conversations');
-      setConversations(res.data || []);
+      const convList = res.data || [];
+      setConversations(convList);
+      // Keep activeConv in sync with refreshed data
+      setActiveConv(prev => {
+        if (!prev || prev.is_new) return prev;
+        const updated = convList.find(c => c.id === prev.id);
+        return updated || prev;
+      });
     } catch (err) {
       console.error('Failed to fetch conversations:', err);
     } finally {
@@ -86,34 +96,49 @@ export default function MessagesPage() {
     }
   }, []);
 
+  const activeConvRef = useRef(null);
+  useEffect(() => { activeConvRef.current = activeConv; }, [activeConv]);
+
   useEffect(() => {
     fetchConversations();
-    // Poll conversation list every 10s to pick up new messages & re-sort
-    convPollRef.current = setInterval(fetchConversations, 10000);
+    // Slow fallback poll (60s) in case WebSocket drops silently
+    convPollRef.current = setInterval(fetchConversations, 60000);
     return () => { if (convPollRef.current) clearInterval(convPollRef.current); };
   }, [fetchConversations]);
 
   // Handle ?newConv= URL parameter (e.g. from recruiter messaging an applicant)
+  const pendingNewConvRef = useRef(null);
+
+  // Capture newConv param immediately on mount
   useEffect(() => {
     const newConvUserId = searchParams.get('newConv');
     const newConvName = searchParams.get('name');
     if (newConvUserId) {
-      // Check if conversation already exists
-      const existing = conversations.find(c => c.partner_id === newConvUserId);
-      if (existing) {
-        setActiveConv(existing);
-      } else {
-        setActiveConv({
-          id: `new_${newConvUserId}`,
-          partner_id: newConvUserId,
-          partner_name: newConvName || 'Unknown',
-          is_new: true,
-        });
-        setMessages([]);
-      }
+      pendingNewConvRef.current = { userId: newConvUserId, name: newConvName || 'Unknown' };
       setSearchParams({}, { replace: true });
     }
-  }, [searchParams, conversations]);
+  }, [searchParams]);
+
+  // Resolve pending new conversation once conversations are loaded
+  useEffect(() => {
+    const pending = pendingNewConvRef.current;
+    if (!pending || loading) return;
+    const existing = conversations.find(c => c.partner_id === pending.userId);
+    if (existing) {
+      setActiveConv(existing);
+      pendingNewConvRef.current = null;
+    } else if (conversations.length > 0 || !loading) {
+      // Conversations loaded but no existing conversation found — start new
+      setActiveConv({
+        id: `new_${pending.userId}`,
+        partner_id: pending.userId,
+        partner_name: pending.name,
+        is_new: true,
+      });
+      setMessages([]);
+      pendingNewConvRef.current = null;
+    }
+  }, [conversations, loading]);
 
   const fetchMessages = useCallback(async (convId) => {
     try {
@@ -141,11 +166,27 @@ export default function MessagesPage() {
     }
   }, [user?.id]);
 
+  // WebSocket: real-time message notifications
+  const fetchMessagesRef = useRef(fetchMessages);
+  useEffect(() => { fetchMessagesRef.current = fetchMessages; }, [fetchMessages]);
+
+  const handleWsEvent = useCallback((event) => {
+    if (event.type === 'new_message') {
+      fetchConversations();
+      const ac = activeConvRef.current;
+      if (ac && !ac.is_new && ac.id === event.conversation_id) {
+        fetchMessagesRef.current(ac.id);
+      }
+    }
+  }, [fetchConversations]);
+
+  useWebSocket(handleWsEvent);
+
   useEffect(() => {
     if (activeConv && !activeConv.is_new) {
       fetchMessages(activeConv.id);
       if (pollRef.current) clearInterval(pollRef.current);
-      pollRef.current = setInterval(() => fetchMessages(activeConv.id), 5000);
+      pollRef.current = setInterval(() => fetchMessages(activeConv.id), 60000);
     }
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, [activeConv, fetchMessages]);
@@ -193,6 +234,14 @@ export default function MessagesPage() {
       }
 
       const payload = { ciphertext };
+
+      // Sign the plaintext with sender's private key for authenticity
+      try {
+        payload.signature = await signMessage(newMessage.trim(), privateKeyRef.current);
+      } catch (sigErr) {
+        console.warn('Message signing failed (non-critical):', sigErr);
+      }
+
       if (activeConv.is_group) {
         payload.conversation_id = activeConv.id;
       } else {
@@ -213,6 +262,19 @@ export default function MessagesPage() {
           setActiveConv(target);
         }
       } else {
+        // Optimistic update: show sent message immediately
+        const optimisticMsg = {
+          id: `temp_${Date.now()}`,
+          conversation_id: activeConv.id,
+          sender_id: String(user?.id),
+          sender_name: user?.full_name,
+          ciphertext: newMessage.trim(),
+          _e2e: true,
+          created_at: new Date().toISOString(),
+        };
+        setMessages(prev => [...prev, optimisticMsg]);
+        setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
+        // Background sync (will replace optimistic message with real data)
         fetchMessages(activeConv.id);
         fetchConversations();
       }
@@ -344,6 +406,76 @@ export default function MessagesPage() {
     }
   }, [activeConv]);
 
+  const leaveGroup = async (groupId) => {
+    if (!confirm('Leave this group? You can still view old messages but won\'t be able to send new ones.')) return;
+    try {
+      await api.post(`/messages/groups/${groupId}/leave`);
+      setActiveConv(null);
+      setMessages([]);
+      setGroupMembers([]);
+      fetchConversations();
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Failed to leave group');
+    }
+  };
+
+  const deleteGroupForMe = async (groupId) => {
+    if (!confirm('Delete this group for you? All messages will be removed and the group will disappear from your list.')) return;
+    try {
+      await api.post(`/messages/groups/${groupId}/delete-for-me`);
+      setActiveConv(null);
+      setMessages([]);
+      setGroupMembers([]);
+      fetchConversations();
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Failed to delete group');
+    }
+  };
+
+  const deleteGroup = async (groupId) => {
+    if (!confirm('Archive this group? Members will still see messages but nobody can send new ones.')) return;
+    try {
+      await api.delete(`/messages/groups/${groupId}`);
+      await fetchConversations();
+      setActiveConv(prev => prev ? { ...prev, is_archived: true } : null);
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Failed to archive group');
+    }
+  };
+
+  const addMemberToGroup = async (groupId, userId) => {
+    // Optimistic: add to local list immediately
+    const conn = connections.find(c => c.id === userId);
+    if (conn) {
+      setGroupMembers(prev => [...prev, { user_id: userId, full_name: conn.name, is_creator: false, has_left: false }]);
+    }
+    try {
+      await api.post(`/messages/groups/${groupId}/members/${userId}`);
+      await fetchGroupMembers(groupId);
+      await fetchConversations();
+    } catch (err) {
+      const detail = err.response?.data?.detail || 'Failed to add member';
+      if (detail !== 'User is already a member') {
+        alert(detail);
+      }
+      await fetchGroupMembers(groupId);
+    }
+  };
+
+  const removeMemberFromGroup = async (groupId, userId) => {
+    if (!confirm('Remove this member from the group?')) return;
+    // Optimistic: remove from local list immediately
+    setGroupMembers(prev => prev.filter(m => m.user_id !== userId));
+    try {
+      await api.delete(`/messages/groups/${groupId}/members/${userId}`);
+      await fetchGroupMembers(groupId);
+      await fetchConversations();
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Failed to remove member');
+      await fetchGroupMembers(groupId);
+    }
+  };
+
   return (
     <div className="max-w-6xl mx-auto px-4 py-8">
       <div className="flex items-center space-x-3 mb-6">
@@ -383,7 +515,7 @@ export default function MessagesPage() {
                 </div>
               ) : (
                 conversations.map(conv => (
-                  <button key={conv.id} onClick={() => setActiveConv(conv)}
+                  <button key={conv.id} onClick={() => { setActiveConv(conv); setShowGroupInfo(false); setShowAddMember(false); }}
                     className={`w-full px-4 py-3 text-left hover:bg-gray-50 transition flex items-center space-x-3 ${
                       activeConv?.id === conv.id ? 'bg-primary-50 border-r-2 border-primary-600' : ''
                     }`}>
@@ -401,7 +533,13 @@ export default function MessagesPage() {
                     <div className="flex-1 min-w-0">
                       <p className="font-medium text-gray-900 truncate">{conv.is_group ? conv.name : (conv.partner_name || 'Unknown')}</p>
                       <p className="text-xs text-gray-400">
-                        {conv.is_group ? `${conv.member_count || 0} members` : 'Click to view messages'}
+                        {conv.is_group
+                          ? conv.is_archived
+                            ? 'Archived'
+                            : conv.has_left
+                              ? 'Left'
+                              : `${conv.member_count || 0} members`
+                          : 'Click to view messages'}
                       </p>
                     </div>
                   </button>
@@ -434,7 +572,7 @@ export default function MessagesPage() {
                     <h3 className="font-semibold text-gray-900">{activeConv.is_group ? activeConv.name : (activeConv.partner_name || 'Unknown')}</h3>
                     <p className="text-xs text-gray-400">
                       {activeConv.is_group
-                        ? `${groupMembers.length} members: ${groupMembers.map(m => m.full_name).join(', ')}`
+                        ? `${groupMembers.filter(m => !m.has_left).length} members: ${groupMembers.filter(m => !m.has_left).map(m => m.full_name).join(', ')}`
                         : 'End-to-end encrypted'}
                     </p>
                   </div>
@@ -449,6 +587,39 @@ export default function MessagesPage() {
                         className="p-2 hover:bg-red-50 rounded-lg transition text-red-400 hover:text-red-600" title="Delete conversation">
                         <Trash2 className="h-4 w-4" />
                       </button>
+                    </div>
+                  )}
+                  {activeConv.is_group && (
+                    <div className="flex items-center gap-1">
+                      <button onClick={() => { setShowGroupInfo(true); fetchGroupMembers(activeConv.id); }}
+                        className="flex items-center gap-1 px-3 py-1.5 rounded-lg transition text-blue-500 hover:bg-blue-50 hover:text-blue-700 text-sm font-medium" title="Group Info">
+                        <Info className="h-4 w-4" />
+                        <span>Info</span>
+                      </button>
+                      {activeConv.created_by && activeConv.created_by === user?.id ? (
+                        !activeConv.is_archived && (
+                          <button onClick={() => deleteGroup(activeConv.id)}
+                            className="flex items-center gap-1 px-3 py-1.5 rounded-lg transition text-red-500 hover:bg-red-50 hover:text-red-700 text-sm font-medium" title="Archive group">
+                            <Trash2 className="h-4 w-4" />
+                            <span>Delete Group</span>
+                          </button>
+                        )
+                      ) : (
+                        !activeConv.has_left && !activeConv.is_archived && (
+                          <>
+                            <button onClick={() => leaveGroup(activeConv.id)}
+                              className="flex items-center gap-1 px-3 py-1.5 rounded-lg transition text-orange-500 hover:bg-orange-50 hover:text-orange-700 text-sm font-medium" title="Leave group">
+                              <LogOut className="h-4 w-4" />
+                              <span>Leave</span>
+                            </button>
+                            <button onClick={() => deleteGroupForMe(activeConv.id)}
+                              className="flex items-center gap-1 px-3 py-1.5 rounded-lg transition text-red-500 hover:bg-red-50 hover:text-red-700 text-sm font-medium" title="Delete group for you">
+                              <Trash2 className="h-4 w-4" />
+                              <span>Delete</span>
+                            </button>
+                          </>
+                        )
+                      )}
                     </div>
                   )}
                 </div>
@@ -531,6 +702,19 @@ export default function MessagesPage() {
                 </div>
 
                 {/* Input */}
+                {activeConv.is_archived ? (
+                  <div className="p-4 border-t border-gray-100 bg-yellow-50">
+                    <p className="text-center text-yellow-700 text-sm font-medium">
+                      This group has been archived by the creator. No new messages can be sent.
+                    </p>
+                  </div>
+                ) : activeConv.has_left ? (
+                  <div className="p-4 border-t border-gray-100 bg-gray-50">
+                    <p className="text-center text-gray-500 text-sm font-medium">
+                      You left this group. You can view old messages but cannot send new ones.
+                    </p>
+                  </div>
+                ) : (
                 <form onSubmit={sendMessage} className="p-4 border-t border-gray-100 flex gap-2">
                   <input
                     type="text" value={newMessage}
@@ -544,6 +728,7 @@ export default function MessagesPage() {
                     <Send className="h-4 w-4" />
                   </button>
                 </form>
+                )}
               </>
             ) : (
               <div className="flex-1 flex items-center justify-center text-gray-400">
@@ -643,6 +828,86 @@ export default function MessagesPage() {
               className="w-full py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition disabled:opacity-50 font-medium">
               Create Group
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Group Info Modal */}
+      {showGroupInfo && activeConv?.is_group && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-900">Group Info</h3>
+              <button onClick={() => { setShowGroupInfo(false); setShowAddMember(false); }}
+                className="p-1 hover:bg-gray-100 rounded-lg"><X className="h-5 w-5" /></button>
+            </div>
+            <div className="mb-4">
+              <p className="text-sm text-gray-500">Group Name</p>
+              <p className="font-semibold text-gray-900">{activeConv.name}</p>
+            </div>
+            <div className="mb-4">
+              <p className="text-sm text-gray-500">Created By</p>
+              <p className="font-medium text-gray-900">{activeConv.created_by_name || 'Unknown'}</p>
+            </div>
+            {activeConv.is_archived && (
+              <div className="mb-4 px-3 py-2 bg-yellow-50 border border-yellow-200 rounded-lg">
+                <p className="text-sm text-yellow-700 font-medium">This group has been archived</p>
+              </div>
+            )}
+            <div className="mb-4">
+              <p className="text-sm font-medium text-gray-700 mb-2">
+                Members ({groupMembers.filter(m => !m.has_left).length})
+              </p>
+              <div className="space-y-2 max-h-48 overflow-y-auto">
+                {groupMembers.map(m => (
+                  <div key={m.user_id} className={`flex items-center justify-between px-3 py-2 rounded-lg ${m.has_left ? 'bg-gray-50 opacity-60' : 'bg-gray-50'}`}>
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-full bg-primary-100 flex items-center justify-center">
+                        <span className="text-primary-600 font-bold text-sm">{(m.full_name || '?')[0].toUpperCase()}</span>
+                      </div>
+                      <div>
+                        <span className="font-medium text-gray-900 text-sm">{m.full_name}</span>
+                        {m.is_creator && <span className="ml-1 text-xs text-blue-600 font-semibold">(Admin)</span>}
+                        {m.has_left && <span className="ml-1 text-xs text-gray-400">(Left)</span>}
+                        {m.user_id === user?.id && <span className="ml-1 text-xs text-gray-400">(You)</span>}
+                      </div>
+                    </div>
+                    {activeConv.created_by === user?.id && m.user_id !== user?.id && !m.has_left && !activeConv.is_archived && (
+                      <button onClick={() => removeMemberFromGroup(activeConv.id, m.user_id)}
+                        className="text-red-400 hover:text-red-600 text-xs font-medium">Remove</button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+            {activeConv.created_by === user?.id && !activeConv.is_archived && (
+              <div>
+                {!showAddMember ? (
+                  <button onClick={() => { setShowAddMember(true); loadConnections(); }}
+                    className="w-full flex items-center justify-center gap-2 py-2 bg-blue-50 text-blue-700 rounded-lg hover:bg-blue-100 transition font-medium text-sm">
+                    <UserPlus className="h-4 w-4" />
+                    Add Member
+                  </button>
+                ) : (
+                  <div>
+                    <p className="text-sm font-medium text-gray-700 mb-2">Add from Connections</p>
+                    <div className="space-y-1 max-h-36 overflow-y-auto mb-2">
+                      {connections.filter(c => !groupMembers.some(m => m.user_id === c.id)).length === 0 ? (
+                        <p className="text-center text-gray-400 py-2 text-sm">All connections are already members</p>
+                      ) : connections.filter(c => !groupMembers.some(m => m.user_id === c.id)).map(c => (
+                        <button key={c.id} onClick={() => addMemberToGroup(activeConv.id, c.id)}
+                          className="w-full flex items-center space-x-3 px-3 py-2 rounded-lg hover:bg-green-50 transition text-left">
+                          <UserPlus className="h-4 w-4 text-green-600" />
+                          <span className="font-medium text-gray-900 text-sm">{c.name}</span>
+                        </button>
+                      ))}
+                    </div>
+                    <button onClick={() => setShowAddMember(false)}
+                      className="w-full py-1.5 text-gray-500 text-sm hover:text-gray-700">Cancel</button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}

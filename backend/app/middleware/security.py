@@ -11,46 +11,36 @@ import uuid
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
-    """Add security headers to all responses."""
+    """Security headers are handled by nginx reverse proxy (server-level add_header).
+    This middleware is kept as a defense-in-depth fallback for direct backend access."""
 
     async def dispatch(self, request: Request, call_next):
         response: Response = await call_next(request)
-
-        # Prevent XSS
-        response.headers["X-Content-Type-Options"] = "nosniff"
-        response.headers["X-Frame-Options"] = "DENY"
-        response.headers["X-XSS-Protection"] = "1; mode=block"
-
-        # Content Security Policy
-        response.headers["Content-Security-Policy"] = (
-            "default-src 'self'; "
-            "script-src 'self'; "
-            "style-src 'self' 'unsafe-inline'; "
-            "img-src 'self' data:; "
-            "font-src 'self'; "
-            "connect-src 'self'"
-        )
-
-        # Strict Transport Security (for HTTPS)
-        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
-
-        # Referrer Policy
-        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-
-        # Permissions Policy
-        response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
-
+        # Only add headers if nginx hasn't already (defense-in-depth)
+        if "X-Content-Type-Options" not in response.headers:
+            response.headers["X-Content-Type-Options"] = "nosniff"
+            response.headers["X-Frame-Options"] = "DENY"
+            response.headers["X-XSS-Protection"] = "1; mode=block"
+            response.headers["Content-Security-Policy"] = (
+                "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+                "img-src 'self' data: blob:; connect-src 'self'; font-src 'self'; "
+                "frame-ancestors 'none'; base-uri 'self'; form-action 'self';"
+            )
+            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+            response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+            response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
         return response
 
 
 class RequestIDMiddleware(BaseHTTPMiddleware):
-    """Attach a unique request ID to every request for traceability."""
+    """Attach a unique request ID to every request for internal traceability.
+    The ID is stored in request.state for logging but NOT exposed in response headers."""
 
     async def dispatch(self, request: Request, call_next):
         request_id = str(uuid.uuid4())
         request.state.request_id = request_id
         response = await call_next(request)
-        response.headers["X-Request-ID"] = request_id
+        # X-Request-ID intentionally NOT set in response to avoid information leakage
         return response
 
 
@@ -58,9 +48,10 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     """Per-IP rate limiter with periodic cleanup and stricter limits for auth endpoints."""
 
     AUTH_PATHS = {"/api/auth/login", "/api/auth/verify-totp", "/api/auth/forgot-password",
-                  "/api/auth/register", "/api/auth/setup-verify"}
+                  "/api/auth/register", "/api/auth/setup-verify", "/api/auth/change-password",
+                  "/api/auth/delete-account", "/api/auth/verify-password"}
 
-    def __init__(self, app, requests_per_minute: int = 60, auth_requests_per_minute: int = 15):
+    def __init__(self, app, requests_per_minute: int = 30, auth_requests_per_minute: int = 5):
         super().__init__(app)
         self.requests_per_minute = requests_per_minute
         self.auth_requests_per_minute = auth_requests_per_minute
@@ -69,8 +60,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self._last_cleanup = time.time()
 
     def _cleanup(self, now: float):
-        """Remove entries older than 60 seconds every 5 minutes."""
-        if now - self._last_cleanup < 300:
+        """Remove entries older than 60 seconds every 60 seconds."""
+        if now - self._last_cleanup < 60:
             return
         window_start = now - 60
         for store in (self.request_counts, self.auth_counts):

@@ -19,6 +19,10 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [roleFilter, setRoleFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [userPage, setUserPage] = useState(1);
+  const usersPerPage = 20;
   const [auditPage, setAuditPage] = useState(1);
   const [announcements, setAnnouncements] = useState([]);
   const [announcementTitle, setAnnouncementTitle] = useState('');
@@ -56,7 +60,7 @@ export default function AdminDashboard() {
   const fetchUsers = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await api.get('/admin/users');
+      const res = await api.get('/admin/users?page_size=100');
       setUsers(res.data || []);
     } catch (err) {
       console.error('Users error:', err);
@@ -141,7 +145,7 @@ export default function AdminDashboard() {
     const token = prompt('Enter your TOTP code to download this resume:');
     if (!token) return;
     try {
-      const res = await api.get(`/resumes/${resumeId}/download?totp_token=${encodeURIComponent(token)}`, { responseType: 'blob' });
+      const res = await api.get(`/resumes/${resumeId}/download`, { responseType: 'blob', headers: { 'X-TOTP-Token': token } });
       const url = window.URL.createObjectURL(new Blob([res.data]));
       const a = document.createElement('a');
       a.href = url;
@@ -248,12 +252,26 @@ export default function AdminDashboard() {
     }
   };
 
-  const filteredUsers = searchQuery
-    ? users.filter(u =>
-        u.full_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        u.email?.toLowerCase().includes(searchQuery.toLowerCase())
-      )
-    : users;
+  const filteredUsers = users.filter(u => {
+    const q = searchQuery.toLowerCase();
+    const matchesSearch = !q || (
+      u.full_name?.toLowerCase().includes(q) ||
+      u.email?.toLowerCase().includes(q) ||
+      u.ip_address?.toLowerCase().includes(q)
+    );
+    const matchesRole = !roleFilter || u.role === roleFilter;
+    const matchesStatus = !statusFilter ||
+      (statusFilter === 'suspended' && u.is_suspended) ||
+      (statusFilter === 'active' && u.is_active && !u.is_suspended) ||
+      (statusFilter === 'inactive' && !u.is_active && !u.is_suspended);
+    return matchesSearch && matchesRole && matchesStatus;
+  });
+
+  const totalUserPages = Math.ceil(filteredUsers.length / usersPerPage);
+  const paginatedUsers = filteredUsers.slice((userPage - 1) * usersPerPage, userPage * usersPerPage);
+
+  // Reset to page 1 when filters change
+  useEffect(() => { setUserPage(1); }, [searchQuery, roleFilter, statusFilter]);
 
   if (!verified) {
     return (
@@ -335,20 +353,37 @@ export default function AdminDashboard() {
       {/* Users */}
       {tab === 'users' && (
         <div>
-          <div className="flex gap-2 mb-4">
-            <div className="relative flex-1">
+          <div className="flex gap-2 mb-4 flex-wrap">
+            <div className="relative flex-1 min-w-[200px]">
               <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
               <input type="text" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Filter users by name or email..." maxLength={100}
+                placeholder="Search by name, email or IP..." maxLength={100}
                 className="w-full pl-9 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none text-sm" />
             </div>
+            <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)}
+              className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 outline-none">
+              <option value="">All Roles</option>
+              <option value="user">User</option>
+              <option value="recruiter">Recruiter</option>
+              <option value="admin">Admin</option>
+              <option value="platform_admin">Platform Admin</option>
+            </select>
+            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}
+              className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 outline-none">
+              <option value="">All Status</option>
+              <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
+              <option value="suspended">Suspended</option>
+            </select>
+            <span className="self-center text-xs text-gray-400">{filteredUsers.length} of {users.length} users</span>
           </div>
 
           {loading ? (
             <div className="text-center py-12 text-gray-400">Loading users...</div>
           ) : (
-            <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-              <table className="w-full">
+            <>
+            <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-x-auto">
+              <table className="w-full min-w-[700px]">
                 <thead>
                   <tr className="bg-gray-50 border-b border-gray-100">
                     <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">User</th>
@@ -359,12 +394,12 @@ export default function AdminDashboard() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">
-                  {filteredUsers.map(u => (
+                  {paginatedUsers.map(u => (
                     <tr key={u.id} className="hover:bg-gray-50 transition">
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3 max-w-[200px]">
                         <div>
-                          <p className="font-medium text-gray-900 text-sm">{u.full_name}</p>
-                          <p className="text-xs text-gray-400">{u.email}</p>
+                          <p className="font-medium text-gray-900 text-sm truncate" title={u.full_name}>{u.full_name}</p>
+                          <p className="text-xs text-gray-400 truncate" title={u.email}>{u.email}</p>
                         </div>
                       </td>
                       <td className="px-4 py-3">
@@ -422,6 +457,24 @@ export default function AdminDashboard() {
                 </tbody>
               </table>
             </div>
+            {totalUserPages > 1 && (
+              <div className="flex items-center justify-between mt-4 px-1">
+                <span className="text-sm text-gray-500">
+                  Page {userPage} of {totalUserPages} ({filteredUsers.length} users)
+                </span>
+                <div className="flex gap-2">
+                  <button onClick={() => setUserPage(p => Math.max(1, p - 1))} disabled={userPage === 1}
+                    className="flex items-center gap-1 px-3 py-1.5 text-sm font-medium rounded-lg border border-gray-300 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed">
+                    <ChevronLeft className="h-4 w-4" /> Previous
+                  </button>
+                  <button onClick={() => setUserPage(p => Math.min(totalUserPages, p + 1))} disabled={userPage === totalUserPages}
+                    className="flex items-center gap-1 px-3 py-1.5 text-sm font-medium rounded-lg border border-gray-300 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed">
+                    Next <ChevronRight className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            )}
+            </>
           )}
         </div>
       )}

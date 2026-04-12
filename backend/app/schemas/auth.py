@@ -28,9 +28,9 @@ class RegisterRequest(BaseModel):
     email: EmailStr
     password: str = Field(..., min_length=8, max_length=72)
     full_name: str = Field(..., min_length=1, max_length=255)
-    phone: Optional[str] = None
+    phone: Optional[str] = Field(None, max_length=20)
     role: Literal["user", "recruiter", "admin"] = "user"
-    public_key: str = Field(..., min_length=64)
+    public_key: str = Field(..., min_length=64, max_length=4096)
 
     @field_validator("password")
     @classmethod
@@ -43,14 +43,14 @@ class RegisterRequest(BaseModel):
         if v is None or v == "":
             return v
         cleaned = re.sub(r"[\s\-]", "", v)
-        if not re.match(r"^\+\d{1,3}\d{6,14}$", cleaned):
-            raise ValueError("Phone must include country code (e.g., +91) followed by the number")
+        if not re.match(r"^\+\d{1,3}\d{10}$", cleaned):
+            raise ValueError("Phone must include country code (e.g., +91) followed by exactly 10 digits")
         return cleaned
 
 
 class LoginRequest(BaseModel):
     email: EmailStr
-    password: str
+    password: str = Field(..., max_length=128)
 
 
 class TOTPVerifyRequest(BaseModel):
@@ -78,7 +78,7 @@ class RefreshTokenRequest(BaseModel):
 
 
 class PasswordChangeRequest(BaseModel):
-    current_password: str
+    current_password: str = Field(..., max_length=128)
     new_password: str = Field(..., min_length=8, max_length=72)
     totp_token: str = Field(..., min_length=6, max_length=6)
 

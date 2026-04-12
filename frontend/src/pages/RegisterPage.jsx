@@ -21,7 +21,7 @@ const COUNTRY_CODES = [
 
 function PasswordStrength({ password }) {
   const checks = [
-    { label: '8-16 characters', pass: password.length >= 8 && password.length <= 16 },
+    { label: '8-72 characters', pass: password.length >= 8 && password.length <= 72 },
     { label: 'Uppercase letter', pass: /[A-Z]/.test(password) },
     { label: 'Lowercase letter', pass: /[a-z]/.test(password) },
     { label: 'Number', pass: /\d/.test(password) },
@@ -94,8 +94,12 @@ export default function RegisterPage() {
       const detail = err.response?.data?.detail;
       if (Array.isArray(detail)) {
         setError(detail.map(d => d.msg || d).join('; '));
+      } else if (typeof detail === 'string' && detail.toLowerCase().includes('phone')) {
+        setError('This phone number is already registered. Please use a different number.');
+      } else if (typeof detail === 'string' && detail.toLowerCase().includes('email')) {
+        setError('An account with this email already exists. Please log in instead.');
       } else {
-        setError(detail || 'Registration failed.');
+        setError(detail || 'Registration failed. Please try again.');
       }
     } finally {
       setLoading(false);
@@ -208,9 +212,9 @@ export default function RegisterPage() {
             <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
             <input
               type="password" name="password" value={form.password} onChange={handleChange}
-              required minLength={8} maxLength={16}
+              required minLength={8} maxLength={72}
               className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none"
-              placeholder="8-16 characters, mixed case + special"
+              placeholder="8-72 characters, mixed case + special"
             />
             <PasswordStrength password={form.password} />
           </div>

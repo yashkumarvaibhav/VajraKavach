@@ -8,7 +8,7 @@ import { deleteLocalE2EEKeyPair } from '../utils/e2eeKeyStore';
 
 function PasswordStrength({ password }) {
   const checks = [
-    { label: '8-16 characters', pass: password.length >= 8 && password.length <= 16 },
+    { label: '8-72 characters', pass: password.length >= 8 && password.length <= 72 },
     { label: 'Uppercase letter', pass: /[A-Z]/.test(password) },
     { label: 'Lowercase letter', pass: /[a-z]/.test(password) },
     { label: 'Number', pass: /\d/.test(password) },
@@ -61,8 +61,8 @@ export default function SecurityPage() {
       return;
     }
 
-    if (newPassword.length < 8 || newPassword.length > 16) {
-      setError('Password must be 8-16 characters');
+    if (newPassword.length < 8 || newPassword.length > 72) {
+      setError('Password must be 8-72 characters');
       return;
     }
 
@@ -180,9 +180,9 @@ export default function SecurityPage() {
                 type={showNew ? 'text' : 'password'}
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
-                required minLength={8} maxLength={16}
+                required minLength={8} maxLength={72}
                 className={inputClass}
-                placeholder="8-16 characters, mixed case + special"
+                placeholder="8-72 characters, mixed case + special"
               />
               <button type="button" onClick={() => setShowNew(!showNew)}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">

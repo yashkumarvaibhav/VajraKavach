@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
 import { ClipboardList, Building2, Calendar, FileText, XCircle } from 'lucide-react';
+import Pagination from '../components/Pagination';
 import { toISTDate } from '../utils/time';
 
 const STATUS_COLORS = {
@@ -17,6 +18,8 @@ export default function ApplicationsPage() {
   const [applications, setApplications] = useState([]);
   const [loading, setLoading] = useState(true);
   const [withdrawing, setWithdrawing] = useState(null);
+  const [appPage, setAppPage] = useState(1);
+  const perPage = 20;
 
   const fetchApplications = async () => {
     try {
@@ -62,14 +65,19 @@ export default function ApplicationsPage() {
         </div>
       ) : (
         <div className="space-y-4">
-          {applications.map(app => (
+          {applications.slice((appPage - 1) * perPage, appPage * perPage).map(app => (
             <div key={app.id} className="bg-white rounded-xl shadow-sm border border-gray-100 p-5">
               <div className="flex items-start justify-between">
                 <div>
                   <h3 className="font-semibold text-gray-900">{app.job_title || 'Untitled Position'}</h3>
-                  <div className="flex items-center gap-1 text-sm text-gray-500 mt-0.5">
-                    <Building2 className="h-3.5 w-3.5" />
-                    <span>{app.company_name || 'Unknown Company'}</span>
+                  <div className="flex items-center gap-2 text-sm text-gray-500 mt-0.5">
+                    <span className="flex items-center gap-1">
+                      <Building2 className="h-3.5 w-3.5" />
+                      {app.company_name || 'Unknown Company'}
+                    </span>
+                    {app.job_is_active === false && (
+                      <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-gray-100 text-gray-500">Job Closed</span>
+                    )}
                   </div>
                 </div>
                 <span className={`px-3 py-1 text-xs font-medium rounded-full capitalize ${STATUS_COLORS[app.status] || 'bg-gray-50 text-gray-700'}`}>
@@ -105,6 +113,10 @@ export default function ApplicationsPage() {
             </div>
           ))}
         </div>
+      )}
+      {!loading && applications.length > 0 && (
+        <Pagination currentPage={appPage} totalPages={Math.ceil(applications.length / perPage)}
+          totalItems={applications.length} onPageChange={setAppPage} itemLabel="applications" />
       )}
     </div>
   );

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
 import { Briefcase, MapPin, Clock, DollarSign, Search, Building2, Calendar, CheckCircle, Filter, Tag } from 'lucide-react';
+import Pagination from '../components/Pagination';
 
 export default function JobsPage() {
   const { user } = useAuth();
@@ -21,6 +22,8 @@ export default function JobsPage() {
   const [appliedJobIds, setAppliedJobIds] = useState(new Set());
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [jobPage, setJobPage] = useState(1);
+  const jobsPerPage = 20;
 
   const isJobSeeker = user?.role === 'user';
 
@@ -32,8 +35,14 @@ export default function JobsPage() {
     }
   }, []);
 
+  // Auto-apply filters when dropdowns change
+  useEffect(() => {
+    fetchJobs(searchQuery);
+  }, [locationTypeFilter, jobTypeFilter]);
+
   const fetchJobs = async (q = '') => {
     setLoading(true);
+    setJobPage(1);
     try {
       const params = new URLSearchParams();
       if (q) params.append('keyword', q);
@@ -42,6 +51,7 @@ export default function JobsPage() {
       if (skillsFilter) params.append('skills', skillsFilter);
       if (locationTypeFilter) params.append('location_type', locationTypeFilter);
       if (jobTypeFilter) params.append('job_type', jobTypeFilter);
+      params.append('page_size', '100');
       const res = await api.get(`/jobs/search?${params.toString()}`);
       setJobs(res.data || []);
     } catch (err) {
@@ -191,7 +201,7 @@ export default function JobsPage() {
         </div>
       ) : (
         <div className="space-y-4">
-          {jobs.map(job => (
+          {jobs.slice((jobPage - 1) * jobsPerPage, jobPage * jobsPerPage).map(job => (
             <div key={job.id} className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
               <div className="flex items-start justify-between">
                 <div>
@@ -201,11 +211,18 @@ export default function JobsPage() {
                     <span>{job.company_name || 'Unknown Company'}</span>
                   </div>
                 </div>
-                <span className={`px-3 py-1 text-xs font-medium rounded-full ${
-                  appliedJobIds.has(job.id) ? 'bg-blue-50 text-blue-700' :
-                  job.is_active ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
-                }`}>
-                  {appliedJobIds.has(job.id) ? 'Applied' : job.is_active ? 'Active' : 'Closed'}
+                <span className={`px-3 py-1 text-xs font-medium rounded-full ${(() => {
+                  const isExpired = job.application_deadline && new Date(job.application_deadline) < new Date(new Date().toDateString());
+                  if (appliedJobIds.has(job.id)) return 'bg-blue-50 text-blue-700';
+                  if (isExpired) return 'bg-red-50 text-red-700';
+                  return job.is_active ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700';
+                })()}`}>
+                  {(() => {
+                    const isExpired = job.application_deadline && new Date(job.application_deadline) < new Date(new Date().toDateString());
+                    if (appliedJobIds.has(job.id)) return 'Applied';
+                    if (isExpired) return 'Expired';
+                    return job.is_active ? 'Active' : 'Closed';
+                  })()}
                 </span>
               </div>
 
@@ -219,15 +236,18 @@ export default function JobsPage() {
                   <span className="flex items-center gap-1"><DollarSign className="h-3.5 w-3.5" />{formatSalary(job)}</span>
                 )}
                 <span className="flex items-center gap-1"><Clock className="h-3.5 w-3.5" /><span className="capitalize">{job.job_type}</span></span>
-                {job.application_deadline && (
-                  <span className="flex items-center gap-1">
-                    <Calendar className="h-3.5 w-3.5" />
-                    Deadline: {new Date(job.application_deadline).toLocaleDateString()}
-                  </span>
-                )}
+                {job.application_deadline && (() => {
+                  const isExpired = new Date(job.application_deadline) < new Date(new Date().toDateString());
+                  return (
+                    <span className={`flex items-center gap-1 ${isExpired ? 'text-red-600 font-semibold' : ''}`}>
+                      <Calendar className="h-3.5 w-3.5" />
+                      {isExpired ? 'Expired' : 'Deadline'}: {new Date(job.application_deadline).toLocaleDateString()}
+                    </span>
+                  );
+                })()}
               </div>
 
-              {isJobSeeker && job.is_active && !appliedJobIds.has(job.id) && (
+              {isJobSeeker && job.is_active && !appliedJobIds.has(job.id) && !(job.application_deadline && new Date(job.application_deadline) < new Date(new Date().toDateString())) && (
                 <div className="mt-4">
                   {applying === job.id ? (
                     <div className="space-y-3">
@@ -282,6 +302,10 @@ export default function JobsPage() {
             </div>
           ))}
         </div>
+      )}
+      {!loading && jobs.length > 0 && (
+        <Pagination currentPage={jobPage} totalPages={Math.ceil(jobs.length / jobsPerPage)}
+          totalItems={jobs.length} onPageChange={setJobPage} itemLabel="jobs" />
       )}
     </div>
   );

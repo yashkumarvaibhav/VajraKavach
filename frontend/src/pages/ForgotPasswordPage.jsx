@@ -6,7 +6,7 @@ import api from '../services/api';
 
 function PasswordStrength({ password }) {
   const checks = [
-    { label: '8-16 characters', pass: password.length >= 8 && password.length <= 16 },
+    { label: '8-72 characters', pass: password.length >= 8 && password.length <= 72 },
     { label: 'Uppercase letter', pass: /[A-Z]/.test(password) },
     { label: 'Lowercase letter', pass: /[a-z]/.test(password) },
     { label: 'Number', pass: /\d/.test(password) },
@@ -125,8 +125,8 @@ export default function ForgotPasswordPage() {
               <input
                 type={showPassword ? 'text' : 'password'}
                 value={newPassword} onChange={(e) => setNewPassword(e.target.value)}
-                required minLength={8} maxLength={16} className={inputClass}
-                placeholder="8-16 characters, mixed case + special"
+                required minLength={8} maxLength={72} className={inputClass}
+                placeholder="8-72 characters, mixed case + special"
               />
               <button type="button" onClick={() => setShowPassword(!showPassword)}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
@@ -140,7 +140,7 @@ export default function ForgotPasswordPage() {
             <label className="block text-sm font-medium text-gray-700 mb-1">Confirm New Password</label>
             <input
               type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)}
-              required maxLength={16} className={inputClass} placeholder="Re-enter new password"
+              required maxLength={72} className={inputClass} placeholder="Re-enter new password"
             />
             {confirmPassword && newPassword !== confirmPassword && (
               <p className="text-xs text-red-500 mt-1">Passwords do not match</p>

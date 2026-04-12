@@ -17,6 +17,7 @@ from app.dependencies import get_current_user, require_role
 from app.services.audit_service import create_audit_log
 from app.utils.ip import get_client_ip
 from app.utils.sanitize import escape_like
+from app.services.action_rate_limit_service import check_action_rate_limit, record_action
 
 router = APIRouter(prefix="/api/companies", tags=["Companies"])
 
@@ -29,12 +30,16 @@ async def create_company(
     current_user: User = Depends(require_role("recruiter", "platform_admin")),
 ):
     """Create a new company page (recruiter or admin only)."""
+    await check_action_rate_limit(db, "company_create", str(current_user.id))
+
     company = Company(
         id=uuid.uuid4(),
         name=req.name,
         description=req.description,
         location=req.location,
         website=req.website,
+        industry=req.industry,
+        size=req.size,
         admin_id=current_user.id,
     )
     db.add(company)
@@ -50,12 +55,16 @@ async def create_company(
         ip_address=get_client_ip(request),
     )
 
+    await record_action(db, "company_create", str(current_user.id))
+
     return CompanyResponse(
         id=str(company.id),
         name=company.name,
         description=company.description,
         location=company.location,
         website=company.website,
+        industry=company.industry,
+        size=company.size,
         is_verified=company.is_verified,
         admin_id=str(company.admin_id),
         created_at=company.created_at,
@@ -64,11 +73,14 @@ async def create_company(
 
 @router.get("/search", response_model=list[CompanyResponse])
 async def search_companies(
-    q: Optional[str] = Query(None),
+    q: Optional[str] = Query(None, max_length=200),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """Search companies by name or location (accessible to all authenticated users)."""
+    await check_action_rate_limit(db, "search_query", str(current_user.id))
+    await record_action(db, "search_query", str(current_user.id))
+
     query = select(Company)
     if q:
         eq = escape_like(q)
@@ -89,6 +101,8 @@ async def search_companies(
             description=c.description,
             location=c.location,
             website=c.website,
+            industry=c.industry,
+            size=c.size,
             is_verified=c.is_verified,
             admin_id=str(c.admin_id),
             created_at=c.created_at,
@@ -99,11 +113,13 @@ async def search_companies(
 
 @router.get("/", response_model=list[CompanyResponse])
 async def list_companies(
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """List all companies."""
-    result = await db.execute(select(Company))
+    """List all companies (paginated)."""
+    result = await db.execute(select(Company).offset(offset).limit(limit))
     companies = result.scalars().all()
 
     return [
@@ -113,6 +129,8 @@ async def list_companies(
             description=c.description,
             location=c.location,
             website=c.website,
+            industry=c.industry,
+            size=c.size,
             is_verified=c.is_verified,
             admin_id=str(c.admin_id),
             created_at=c.created_at,
@@ -139,6 +157,8 @@ async def my_companies(
             description=c.description,
             location=c.location,
             website=c.website,
+            industry=c.industry,
+            size=c.size,
             is_verified=c.is_verified,
             admin_id=str(c.admin_id),
             created_at=c.created_at,
@@ -165,6 +185,8 @@ async def get_company(
         description=company.description,
         location=company.location,
         website=company.website,
+        industry=company.industry,
+        size=company.size,
         is_verified=company.is_verified,
         admin_id=str(company.admin_id),
         created_at=company.created_at,
@@ -210,6 +232,8 @@ async def update_company(
         description=company.description,
         location=company.location,
         website=company.website,
+        industry=company.industry,
+        size=company.size,
         is_verified=company.is_verified,
         admin_id=str(company.admin_id),
         created_at=company.created_at,

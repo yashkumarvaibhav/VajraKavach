@@ -2,10 +2,11 @@
 VajraKavach — User Schemas
 """
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 import uuid
+import re
 
 
 class UserBase(BaseModel):
@@ -34,16 +35,37 @@ class UserProfileUpdate(BaseModel):
     location: Optional[str] = Field(None, max_length=255)
     bio: Optional[str] = Field(None, max_length=5000)
     website: Optional[str] = Field(None, max_length=512)
-    education: Optional[List[Dict[str, Any]]] = None
-    experience: Optional[List[Dict[str, Any]]] = None
-    skills: Optional[List[str]] = None
-    privacy_settings: Optional[Dict[str, str]] = None
+    education: Optional[List[Dict[str, Any]]] = Field(None, max_length=50)
+    experience: Optional[List[Dict[str, Any]]] = Field(None, max_length=50)
+    skills: Optional[List[str]] = Field(None, max_length=100)
+    privacy_settings: Optional[Dict[str, str]] = Field(None, max_length=20)
     show_viewers: Optional[bool] = None
+
+    @field_validator('website')
+    @classmethod
+    def validate_website(cls, v):
+        if v is None:
+            return v
+        if not re.match(r'^https?://', v, re.IGNORECASE):
+            if re.match(r'^[a-z]+:', v, re.IGNORECASE):
+                raise ValueError('Website must use http:// or https:// protocol')
+            v = f'https://{v}'
+        return v
 
 
 class UserNameUpdate(BaseModel):
     full_name: Optional[str] = Field(None, max_length=255)
     phone: Optional[str] = Field(None, max_length=20)
+
+    @field_validator("phone")
+    @classmethod
+    def check_phone(cls, v):
+        if v is None or v == "":
+            return v
+        cleaned = re.sub(r"[\s\-]", "", v)
+        if not re.match(r"^\+\d{1,3}\d{10}$", cleaned):
+            raise ValueError("Phone must include country code (e.g., +91) followed by exactly 10 digits")
+        return cleaned
 
 
 class UserProfileResponse(BaseModel):
@@ -51,6 +73,7 @@ class UserProfileResponse(BaseModel):
     user_id: str
     full_name: Optional[str] = None
     email: Optional[str] = None
+    phone: Optional[str] = None
     headline: Optional[str] = None
     location: Optional[str] = None
     bio: Optional[str] = None
@@ -103,7 +126,7 @@ class UserSearchResponse(BaseModel):
 
 
 class UserE2EEKeyUpdate(BaseModel):
-    public_key: str = Field(..., min_length=64)
+    public_key: str = Field(..., min_length=64, max_length=4096)
 
 
 class UserE2EEKeyStatusResponse(BaseModel):

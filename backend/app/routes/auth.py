@@ -22,6 +22,7 @@ from app.schemas.user import UserResponse
 from app.services.auth_service import (
     hash_password, verify_password, create_access_token,
     create_refresh_token, decode_token, revoke_token,
+    flush_pending_revocations, load_revoked_cache, is_token_revoked,
 )
 from app.services.totp_service import (
     generate_totp_secret, get_totp_uri, generate_qr_code_base64, verify_totp,
@@ -33,6 +34,7 @@ from app.dependencies import get_current_user_pre_totp, get_current_user
 from app.utils.ip import get_client_ip
 from app.models.resume import Resume
 from app.config import settings
+from app.services.action_rate_limit_service import check_action_rate_limit, record_action
 
 router = APIRouter(prefix="/api/auth", tags=["Authentication"])
 
@@ -79,9 +81,27 @@ async def register(
     db: AsyncSession = Depends(get_db),
 ):
     """Register a new user. Returns TOTP setup QR code."""
+    # Rate limit: strict account creation per IP
+    client_ip = get_client_ip(request)
+    await check_action_rate_limit(db, "register", client_ip)
+
     existing = await db.execute(select(User).where(User.email == req.email))
     if existing.scalar_one_or_none():
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="An account with this email already exists. Please log in instead.",
+        )
+
+    # Reject duplicate phone numbers (if provided)
+    if req.phone:
+        phone_exists = await db.execute(
+            select(User).where(User.phone == req.phone, User.phone != "", User.phone.isnot(None))
+        )
+        if phone_exists.scalar_one_or_none():
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="This phone number is already registered with another account.",
+            )
 
     role = UserRole.USER
     if req.role == "recruiter":
@@ -123,6 +143,8 @@ async def register(
         ip_address=get_client_ip(request),
     )
 
+    await record_action(db, "register", client_ip)
+
     totp_uri = get_totp_uri(totp_secret, req.email)
     qr_b64 = generate_qr_code_base64(totp_uri)
 
@@ -143,23 +165,28 @@ async def setup_verify(
     This marks the user's TOTP as verified so the QR code won't be shown again on login."""
     result = await db.execute(select(User).where(User.email == req.email))
     user = result.scalar_one_or_none()
+
+    # Uniform error to prevent user enumeration
+    _generic_error = HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or TOTP token")
+
     if not user:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+        raise _generic_error
 
     if user.totp_verified:
-        return {"message": "TOTP already verified"}
+        raise _generic_error
 
     if not user.totp_secret:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="TOTP not set up")
+        raise _generic_error
 
-    if check_totp_lockout(user.email):
+    client_ip = get_client_ip(request)
+    if check_totp_lockout(client_ip):
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Too many failed TOTP attempts. Try again later.")
 
     if not verify_totp(decrypt_totp_secret(user.totp_secret), req.token):
-        record_totp_failure(user.email)
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid TOTP token")
+        record_totp_failure(client_ip)
+        raise _generic_error
 
-    clear_totp_attempts(user.email)
+    clear_totp_attempts(client_ip)
     user.totp_verified = True
     await db.flush()
 
@@ -183,8 +210,15 @@ async def login(
     db: AsyncSession = Depends(get_db),
 ):
     """Authenticate with email + password. Returns JWT (TOTP still required)."""
+    client_ip = get_client_ip(request)
+    await check_action_rate_limit(db, "login", client_ip)
+
     result = await db.execute(select(User).where(User.email == req.email))
     user = result.scalar_one_or_none()
+
+    if not user:
+        # Perform a dummy hash to prevent timing oracle (same delay as real verification)
+        verify_password(req.password, hash_password("dummy-constant-time-pad"))
 
     if not user or not verify_password(req.password, user.hashed_password):
         await create_audit_log(
@@ -212,6 +246,8 @@ async def login(
         resource_id=str(user.id),
         ip_address=get_client_ip(request),
     )
+
+    await record_action(db, "login", client_ip)
 
     user.last_login = datetime.utcnow()
 
@@ -242,11 +278,12 @@ async def verify_totp_endpoint(
     if not current_user.totp_secret:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="TOTP not set up for this account")
 
-    if check_totp_lockout(current_user.email):
+    client_ip = get_client_ip(request)
+    if check_totp_lockout(client_ip):
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Too many failed TOTP attempts. Try again later.")
 
     if not verify_totp(decrypt_totp_secret(current_user.totp_secret), req.token):
-        locked = record_totp_failure(current_user.email)
+        locked = record_totp_failure(client_ip)
         await create_audit_log(
             db=db,
             action="user.totp_failed",
@@ -258,7 +295,7 @@ async def verify_totp_endpoint(
         )
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid TOTP token")
 
-    clear_totp_attempts(current_user.email)
+    clear_totp_attempts(client_ip)
 
     if not current_user.totp_verified:
         current_user.totp_verified = True
@@ -305,6 +342,11 @@ async def refresh_token(
     if not payload or payload.get("type") != "refresh":
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token")
 
+    # Rate limit token refresh per user
+    user_id_from_token = payload.get("sub")
+    if user_id_from_token:
+        await check_action_rate_limit(db, "token_refresh", user_id_from_token)
+
     token_ip = payload.get("ip")
     if token_ip:
         request_ip = get_client_ip(request)
@@ -315,11 +357,26 @@ async def refresh_token(
             )
 
     user_id = payload.get("sub")
-    result = await db.execute(select(User).where(User.id == user_id))
+    result = await db.execute(select(User).where(User.id == user_id).with_for_update())
     user = result.scalar_one_or_none()
 
-    if not user or not user.is_active:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found or inactive")
+    if not user or not user.is_active or user.is_suspended:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found, inactive, or suspended")
+
+    # Reject tokens issued before a forced reauth (e.g. forgot-password)
+    if user.force_reauth_at:
+        token_iat = payload.get("iat")
+        if token_iat and datetime.utcfromtimestamp(token_iat) < user.force_reauth_at:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Session invalidated. Please log in again.",
+            )
+
+    # Revoke the old refresh token BEFORE issuing new ones to close race window
+    if is_token_revoked(refresh_token_value):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Refresh token already used")
+    revoke_token(refresh_token_value)
+    await flush_pending_revocations(db)
 
     token_data = {
         "sub": str(user.id),
@@ -331,9 +388,9 @@ async def refresh_token(
 
     new_access_token = create_access_token(token_data)
     new_refresh_token = create_refresh_token(token_data)
-    # Revoke the old refresh token to prevent reuse
-    revoke_token(refresh_token_value)
     _set_auth_cookies(response, request, new_access_token, new_refresh_token)
+
+    await record_action(db, "token_refresh", str(user.id))
 
     return TokenResponse(
         totp_required=not payload.get("totp_verified", False),
@@ -348,6 +405,8 @@ async def change_password(
     current_user: User = Depends(get_current_user),
 ):
     """Change password (requires current password + TOTP verification)."""
+    await check_action_rate_limit(db, "password_change", str(current_user.id))
+
     if not verify_password(req.current_password, current_user.hashed_password):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Current password is incorrect")
 
@@ -361,6 +420,15 @@ async def change_password(
     clear_totp_attempts(current_user.email)
     current_user.hashed_password = hash_password(req.new_password)
 
+    # Revoke current session tokens so all sessions (including stolen ones) are invalidated
+    access_token = request.cookies.get("access_token")
+    refresh_tok = request.cookies.get("refresh_token")
+    if access_token:
+        revoke_token(access_token)
+    if refresh_tok:
+        revoke_token(refresh_tok)
+    await flush_pending_revocations(db)
+
     await create_audit_log(
         db=db,
         action="user.password_change",
@@ -370,7 +438,9 @@ async def change_password(
         ip_address=get_client_ip(request),
     )
 
-    return {"message": "Password changed successfully"}
+    await record_action(db, "password_change", str(current_user.id))
+
+    return {"message": "Password changed successfully. Please log in again."}
 
 
 @router.post("/verify-password")
@@ -410,6 +480,9 @@ async def forgot_password(
     db: AsyncSession = Depends(get_db),
 ):
     """Reset password using email + TOTP verification (no login required)."""
+    client_ip = get_client_ip(request)
+    await check_action_rate_limit(db, "forgot_password", client_ip)
+
     result = await db.execute(select(User).where(User.email == req.email))
     user = result.scalar_one_or_none()
 
@@ -432,6 +505,8 @@ async def forgot_password(
 
     clear_totp_attempts(user.email)
     user.hashed_password = hash_password(req.new_password)
+    # Invalidate all existing sessions for this user
+    user.force_reauth_at = datetime.utcnow()
 
     await create_audit_log(
         db=db,
@@ -442,18 +517,26 @@ async def forgot_password(
         ip_address=get_client_ip(request),
     )
 
+    await record_action(db, "forgot_password", client_ip)
+
     return {"message": "Password reset successfully. You can now log in with your new password."}
 
 
 @router.post("/logout")
-async def logout(request: Request, response: Response):
-    """Clear the current auth session cookies and revoke tokens."""
+async def logout(
+    request: Request,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+):
+    """Clear the current auth session cookies and revoke tokens (persisted to DB)."""
     access_token = request.cookies.get("access_token")
     refresh_token = request.cookies.get("refresh_token")
     if access_token:
         revoke_token(access_token)
     if refresh_token:
         revoke_token(refresh_token)
+    # Persist revocations to database so they survive server restarts
+    await flush_pending_revocations(db)
     _clear_auth_cookies(response, request)
     return {"message": "Logged out successfully"}
 

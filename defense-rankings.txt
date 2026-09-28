@@ -1,0 +1,77 @@
+Rank	Group	Total	Valid ↑	Invalid	Pending	Defense Rate	Top Attack Categories
+🥇	G2 Team VajraKavach	45	1	44	0	
+97.8%
+Authentication/Access Control (18), Script Injection (XSS) (4), CSRF (Cross-Site Request Forgery) (2)
+🥈	G7 Team Heisenberg	69	4	65	0	
+94.2%
+Authentication/Access Control (17), DoS (3), Functionality (3)
+🥉	G3 Team Cipher	41	5	36	0	
+87.8%
+Authentication/Access Control (10), Permissive HSTS Header (2), DOS (2)
+4	G13 FortKnox	33	6	27	0	
+81.8%
+Authentication/Access Control (8), Functionality bug (5), Security Misconfiguration (3)
+5	G12 Team Atom	76	7	69	0	
+90.8%
+Authentication/Access Control (19), Functionality bug (4), Functionality (3)
+6	G6 Akatsuki	54	10	44	0	
+81.5%
+Authentication/Access Control (6), NA (2), Denial of Service (DoS) / Resource Exhaustion (2)
+7	G1 Team Rocket	72	13	59	0	
+81.9%
+Authentication/Access Control (24), Session Hijacking (4), Workflow Failure (2)
+8	G19 G19	32	13	19	0	
+59.4%
+Authentication/Access Control (6), CSRF (Cross-Site Request Forgery) (3), Denial of Service (DoS) (3)
+9	G14 LowKeySecure	56	14	42	0	
+75.0%
+Authentication/Access Control (16), Script Injection (XSS) (3), Denial of Service (2)
+10	G25 G25	38	16	22	0	
+57.9%
+Authentication/Access Control (7), IDOR (3), Script Injection (XSS) (2)
+11	G16 noFCSgiven	61	17	44	0	
+72.1%
+Authentication/Access Control (22), Functionality (2), Denial of Service (2)
+12	G18 Team STFU	38	19	19	0	
+50.0%
+Authentication/Access Control (10), NA (4), Analyzing Resume (1)
+13	G10 overflow	79	24	55	0	
+69.6%
+Authentication/Access Control (21), Session Hijacking (2), CSRF (Cross-Site Request Forgery) (2)
+14	G22 Best Team 2.0	88	27	61	0	
+69.3%
+Authentication/Access Control (20), Insecure Communication (HTTP instead of HTTPS) (2), Insecure Transport Layer (2)
+15	G17 the 8th floor	62	27	35	0	
+56.5%
+Authentication/Access Control (14), Script Injection (XSS) (5), Insecure Transmission of Credentials and Authentication Tokens over HTTP (2)
+16	G9 NoSecurity	68	29	39	0	
+57.4%
+Authentication/Access Control (7), Functionality bug (5), fvuln (5)
+17	G20 Targaryens	70	30	40	0	
+57.1%
+Authentication/Access Control (13), fun (3), DoS (2)
+18	G23 Damera Corp	57	33	24	0	
+42.1%
+Authentication/Access Control (8), input validation bug (2), Denial of Service (2)
+19	G21 G21	48	34	1	13	
+2.1%
+Authentication/Access Control (11), Functionality bug (3), no reset password (1)
+20	G8 Badam Lassi	88	36	52	0	
+59.1%
+Authentication/Access Control (22), Denial of Service (4), Denial of Service (DoS) (3)
+21	G24 The Null Pointers	64	36	28	0	
+43.8%
+Authentication/Access Control (17), Functionality (3), Script Injection (XSS) (3)
+22	G5 Team Stack Underflow	108	42	66	0	
+61.1%
+Authentication/Access Control (42), Denial of Service (3), Information Disclosure / Improper Error Handling (3)
+23	G11 NCR	102	50	52	0	
+51.0%
+Authentication/Access Control (27), Denial of Service (5), Information Disclosure (4)
+24	G4 Phishers 2.0	89	52	37	0	
+41.6%
+Authentication/Access Control (18), Session Hijacking (2), CSRF (Cross-Site Request Forgery) (2)
+25	G15 INVINCIBLE	97	68	28	1	
+28.9%
+Authentication/Access Control (25), CSRF (Cross-Site Request Forgery) (6), Script Injection (XSS) (5)
+Ranked by fewest valid bugs (ascending). Defense Rate = Invalid / Total × 100. Higher = better defense.

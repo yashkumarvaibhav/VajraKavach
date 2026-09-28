@@ -1,0 +1,195 @@
+Yash Kumar Vaibhav MT25091 · yash25091@iiitd.ac.in
+40 reports · 33 valid · 7 invalid
+#	Target Group	Type	Category	Impact	Verdict	Rebuttal	Comments
+29	G1 Team Rocket	Security	Authentication/Access Control	Search endpoint leaks UUIDs, emails, and roles for all users regardless of privacy settings. Privacy controls are completely bypassed allowing full user directory enumeration.	Valid		Case 2 is a legitimate security finding. Accessing /api/jobs/my-postings without authentication returning HTTP 500 instead of 401 indicates that authentication middleware is either not applied or failing before business logic executes. This is not merely a UX issue — it means the auth layer is not guaranteed to fire first, which is a broken access control pattern (OWASP A01:2021). A correct implementation should reject unauthenticated requests at the middleware layer before any backend code runs.
+31	G1 Team Rocket	Security	Denial of Service	TCP connection flood exhausts server connection pool causing complete service denial. 7 screenshots document downtime statistics, browser failures, and cross-check evidence across multiple clients.	Valid		
+133	G3 Team Cipher	Security	Denial Of Service	Connection flood targeting nginx exhausts the worker connection pool causing service denial. 4 screenshots documenting timeout timeline and browser failures.	Valid	The report demonstrates high-concurrency load against the service and shows timeouts/429s from the test setup. However, the health checks appear to be part of the same attacking/test environment, and the report does not provide independent verification from a separate non-attacking client. Therefore, the evidence does not conclusively prove platform-wide denial of service for legitimate users.
+
+
+DoS was in scope, but this report is invalid as submitted because the impact evidence is not sufficiently isolated from the attacking client. A valid DoS report should show that independent legitimate users could not access the service during the attack, preferably through health checks or browser evidence from a separate machine/network. The observed failures may reflect attacker-side resource exhaustion, per-client throttling, or the attackerâ€™s own connection saturation.	NOT AGREE WITH CORRENT DECISON OF "INVALID" 
+
+
+The report shows high-load degradation symptoms, but does not conclusively prove denial of service for independent non-attacking users. It would be stronger with third-party health checks during the attack. Refs: OWASP Denial of Service Cheat Sheet; RFC 6585 Section 4, 429 Too Many Requests.
+
+"The group member is editing my comments"
+
+The DoS attack was carried out from different machine(IP Address" and screenshots were taken from Different IP Address"
+
+Hence, the decison should be changed to Valid
+Changed: 22 Apr, 12:00 pm
+📜 1 version(s)
+299	G5 Team Stack Underflow	Security	Authentication/Access Control	Authenticated IDOR via sequential user ID enumeration leaks bcrypt password hashes and TOTP secret seeds for all users. Attacker can crack passwords offline and bypass 2FA.	Valid		
+302	G5 Team Stack Underflow	Security	Denial of Service	Automated bot creation and log abuse fills server disk space causing persistent service breakage. Service cannot recover without manual cleanup. 7 screenshots document the full attack timeline.	Valid		
+Changed: 22 Apr, 12:00 pm
+📜 1 version(s)
+303	G5 Team Stack Underflow	Security	Authentication/Access Control	Attacker gains admin access and performs permanent user deletion from admin panel. Destructive action with no recovery mechanism. Admin login, panel access, and deletion all captured.	Invalid	We have provided the credentials of the admin that you have exploited in the user guide itself, this is not really an exploit. And the admin's functionality is to be able to delete users. Provided that you did get the TOTP from the previous bug, but we have two admins in place. One is the super admin, if you were able to take over the account of the Super Admin (since it's password wasn't provided in the user guide) then this would've been a valid exploit. You had access to the password of the Admin Demo account which was given in the user guide itself, without that admin's password, you couldn't even perform this action.	Admin takeover is itself an exploit. Screenshots attached in report shows Admin Takeover + User deletion. 
+So exploit is valid
+
+Second reply from tester : Considering the facts and nature, I accept your verdict of "Invalid" for this bug
+304	G5 Team Stack Underflow	Security	CSRF (Cross-Site Request Forgery)	Wildcard Access-Control-Allow-Origin header allows any website to make cross-origin requests. Working HTML PoC demonstrates cross-origin data theft using stolen authentication token.	Valid		
+Changed: 22 Apr, 12:00 pm
+📜 1 version(s)
+305	G5 Team Stack Underflow	Security	Denial of Service	Combined connection flood and bcrypt exhaustion attack causes service disruption. Downtime and latency metrics documented.	Valid	Didn't invalidate the bug, was a pasting error from our side.	
+Changed: 22 Apr, 12:00 pm
+📜 1 version(s)
+319	G5 Team Stack Underflow	Security	Authentication/Access Control	No rate limiting on TOTP verification endpoint allows brute-force attack on 6-digit codes. Terminal shows cracked TOTP code and successful login bypass.	Valid	Verdict always was valid,was a pasting error on our end, since the order of the sheet changed.	
+Changed: 22 Apr, 12:05 pm
+📜 1 version(s)
+321	G5 Team Stack Underflow	Security	Authentication/Access Control	TOTP secret seed leaked through IDOR allows attacker to generate valid OTP codes and bypass two-factor authentication. Successful post-2FA login demonstrated.	Valid		
+322	G5 Team Stack Underflow	Functionality	Missing Functionality	Virtual/on-screen keyboard feature is not implemented. Required security feature for sensitive input fields is absent.	Valid	The verdict was valid, we had a pasting error on our end due to change in the order of the sheet.	
+Changed: 22 Apr, 12:05 pm
+📜 1 version(s)
+502	G8 Badam Lassi	Security	Denial of Service	Database bloat attack causes persistent service degradation that survives after the attack stops. Stepwise performance degradation leading to complete post-attack failure requiring manual intervention.	Valid		
+504	G8 Badam Lassi	Security	Denial of Service	Crafted API requests trigger expensive database queries causing request amplification. Measured latency-per-request shows significant server degradation from minimal attacker effort.	Valid	
+Changed: 20 Apr, 09:55 am
+📜 1 version(s)	The rebuttal is itself proof that it was an Actual Denial of Service.The attack was done from a different ip and checked heath  and screenshotted from different IP.
+Root cause analysis and remediation method is mentioned in POC. 
+If any genuine user is not able to use your site normally because of some othet attacker during the attack period - Then it's a genuine Denial of Service
+
+Note : G8 has intentionally edited the earlier comment in which they were acknowledging the sucessfull DoS Attack
+506	G8 Badam Lassi	Security	Denial of Service	Development server on port 3000 directly accessible. Flooding this port causes shared backend collapse affecting all services. 4 screenshots documenting port exposure to backend failure chain.	Valid	
+Changed: 20 Apr, 09:55 am
+📜 1 version(s)	The rebuttal claims that the site was rehosted on 17th april, but the attack happenned on 15th April - well within the testing window of 13th April to 18th April.
+
+Rebuttal accepts that the site was vulnerable to DoS attack and was attacked succesfully - hence it should be valid
+586	G9 NoSecurity	Security	Denial of Service	Simultaneous flood on Next.js frontend and backend ports causes dual-service denial. 4 screenshots showing simultaneous failure across both services.	Valid	backend have rate limiting see your report, only 5 requests were validated adn then your ip was banned. Siure the site is down because of the nextJS being flood but not because of the dual seervice denial, backend have ratelimiting implemented and just your ip is being banned after 5 tries. see yoiur own report after 5 request it drops, because of your ip blacklisted. Frontend is down the backend will still run, if you change the Demonstrate part for both the abckend and frontend , i can approve the bug	Your Rebuttal is flawed. Failed also means that your site is down.
+MOST IMPORTANT : The screenshot attached in report is taken from Different Machine/different IP address indicating that services were down for all the users. 
+If developer wishes - same attack can be done again and demostrated
+
+Hence the bug is a valid SECURITY exploit. Properly Documented and Demonstrated.
+
+Reply to G9 : Even if frontend is down for all IP Address other than the attacking IP - It's a succesful DoS attack.
+673	G10 overflow	Security	Denial of Service	Backend flood bypassing nginx reverse proxy causes direct backend failure. 4 screenshots documenting backend failure at scale.	Valid	The report demonstrates a high-volume traffic flood that overwhelms the server infrastructure, resulting in service degradation. However, this is not due to a specific application vulnerability or security bypass.
+
+The attack relies on extremely high request rates (tens of thousands of requests per second), which falls under general Denial-of-Service conditions rather than an exploitable flaw in the application logic.
+
+No authentication bypass, data exposure, or privilege escalation is demonstrated. The observed behavior is expected when infrastructure is subjected to extreme load without specialized DDoS protection.
+
+Therefore, this should be treated as an infrastructure scalability limitation rather than a critical security vulnerability.	The rebuttal itself acknowledges that DoS attack was carried out on them sucessfully. 
+
+Ref : "The attack relies on extremely high request rates (tens of thousands of requests per second), which falls under general Denial-of-Service conditions rather than an exploitable flaw in the application logic."
+
+Your platform should protect itself from DoS Attacks. Under Testing conditions, DoS had been cleared by Instructors and TAs multiple time. DDoS is not allowed, but DoS is allowed.
+
+The attack carried out your platform was a DoS attack originating from single PC(IP Address)
+
+The recommended fixes are already shared with you in PoC document.
+752	G11 NCR	Security	Authentication/Access Control	Any user can register with role=admin and gain full admin access including user management, suspension and deletion. Complete privilege escalation from unauthenticated user to administrator.	Valid		
+753	G11 NCR	Security	Authentication/Access Control	Redis instance on port 6379 has no authentication. Attacker can execute PING, CONFIG GET, ACL LIST, and SHUTDOWN commands remotely via netcat. Full database access and server shutdown possible.	Valid		
+754	G11 NCR	Security	Authentication/Access Control	Authenticated IDOR on profile endpoint allows enumeration of all 21 user profiles including full names, emails, roles, and personal information via sequential ID iteration.	Valid		
+755	G11 NCR	Security	Denial of Service	Attack causes persistent server crash where the service remains unresponsive even after the attack stops. Post-attack hang demonstrated requiring manual server restart.	Valid	It is also possible that the issue was observed during a time when the system was already under heavy load or an external attack. During the testing window, the application was functioning properly under normal conditions.Additionally, this behavior does not indicate a security vulnerability but rather a situational performance issue under specific conditions.
+Changed: 23 Apr, 09:50 am
+📜 1 version(s)	The Attack PoC is attached. The PoC is properly time tagged and is enough to reproduce the same effects once again.
+
+Hence, THE DECISION SHOULD BE CHANGED TO VALID
+Changed: 23 Apr, 11:45 pm
+📜 1 version(s)
+756	G11 NCR	Security	Denial of Service	Automated bot creation through nginx proxy fills the database causing persistent service breakage. Bot growth and service failure documented.	Valid		
+757	G11 NCR	Security	Denial of Service	No rate limit on login enables bcrypt CPU exhaustion attack. Combined with slow SSL handshakes causes measured latency growth and login-path degradation.	Valid		
+764	G11 NCR	Functionality	Functionality Missing	Resume download feature is non-functional. Users cannot download uploaded resumes. Required feature for a job platform is completely broken.	Invalid	the system already provides a resume download functionality for recruiters, enabling them to securely access applicant resumes as part of the hiring workflow. This aligns with the core objective of the platform, which is to facilitate recruitment processes.
+
+However, for users (i.e., the resume owners), there is no defined project requirement to support self-download of uploaded resumes.
+Changed: 21 Apr, 09:35 pm
+📜 1 version(s)	Rebuttal Accepted.
+Changed: 22 Apr, 11:40 am
+📜 1 version(s)
+765	G11 NCR	Functionality	Functionality Missing	Profile picture upload feature is not functional. Users cannot upload or display profile pictures as required by the project specification.	Valid	It is not a functional issue
+Changed: 20 Apr, 08:20 am
+📜 1 version(s)	Reference : 
+(1) Course Project Requirements : __PROJECT_FCS_26__.pdf - > Section 2.A.i : Users can create and edit profiles, including name, headline, location, education, experience, skills,
+profile picture, and bio.
+(2) Comment of TA Annika Sinha on TA Vaibhav Lakhera's post : https://classroom.google.com/c/ODM3ODgwMDg3NzMz/p/ODU5NjA2NDIzNTgy/details : You can submit up to 10 functional bugs (i.e., missing functionalities not implemented by the group)
+
+G11 didn't implemented the functionality shared in (1) Course Project Requirement -> Hence a valid FUNCTIONAL bug.
+
+VERDICT SHOULD BE CHANGED TO "VALID"
+Changed: 20 Apr, 08:50 am
+📜 1 version(s)
+766	G11 NCR	Functionality	Functionality Missing	Job listing page lacks search and filter functionality. Users cannot filter jobs by criteria. Required feature for a job platform is absent.	Valid	It was working properly,partially correct
+Changed: 23 Apr, 10:50 pm
+📜 2 version(s)	Reference : 
+(1) Course Project Requirements : __PROJECT_FCS_26__.pdf - > Section 2.C.i : Job search by keywords, company, location, skill tags, and filters (remote, internship, full-time).
+(2) Comment of TA Annika Sinha on TA Vaibhav Lakhera's post : https://classroom.google.com/c/ODM3ODgwMDg3NzMz/p/ODU5NjA2NDIzNTgy/details  : You can submit up to 10 functional bugs (i.e., missing functionalities not implemented by the group)
+
+G11 didn't implemented the functionality shared in (1) Course Project Requirement -> Hence a valid FUNCTIONAL bug.
+
+VERDICT SHOULD BE CHANGED TO "VALID"
+Changed: 20 Apr, 08:55 am
+📜 1 version(s)
+767	G11 NCR	Functionality	Functionality Not Working	Sending connection requests produces CSRF or server-side errors. Connection request functionality is broken with server/UI mismatch.	Invalid	The reported issue is not a system-wide defect, as the functionality is working correctly for other users. The occurrence of the “CSRF token missing or invalid” message for a specific user is likely due to a session-related issue such as expired tokens.Since CSRF tokens are user-session dependent, such behavior can occur when the token is not properly refreshed or synchronized.
+Reply:
+The proof you have shared reflects a single instance, whereas the functionality has been verified to be working correctly for other users during the testing window.
+Changed: 23 Apr, 01:00 pm
+📜 2 version(s)	Rebuttal Not Accepted.
+The issue was checked from 3 different browsers in 2 different machines(1 laptop and 1 mobile)
+The issue remained persistent across all the devices. 
+I have already submitted this bug under functionality bug and nor security bug.
+
+Hence - The decision should be changed to VALID
+Changed: 23 Apr, 11:45 pm
+📜 3 version(s)
+856	G12 Team Atom	Security	Denial of Service	Multi-vector API flood targeting multiple endpoints simultaneously causes complete service failure. 6 screenshots with metrics and health check evidence.	Valid	All the endpoints are working fine. They are responding all correctly and within a few milliseconds and any other error status does not mean the server crashed. Even if it shows 501 that is because of throttling	Replicate the attack from your side. and check the status from different IP.  You will get same result.
+
+Methodology adopted by me to ensure fairness in testing : The attacking PC(IP Address) is different from the PC where screenshots are being taken. 
+
+Complete POC with demonstration and documentation are there with you for your review. 
+
+Reply to G12 as they changed their initial rebuttal :
+Your website was down for entire duration of attack (300 seconds). Website recovering after attack is other proof that shows DoS attack was succesful. Thiis is a Denial of Service for all Genuine users.
+907	G13 FortKnox	Security	Denial of Service	Simultaneous flood on both Express frontend (port 3000) and uvicorn backend (port 8000) causes complete dual-service denial. 6 screenshots with dual-port metrics and recovery timing.	Valid		
+947	G14 LowKeySecure	Security	Denial of Service	Django development server directly exposed on port 8000 without reverse proxy protection. nmap scan, rate-limit comparison, and health checks demonstrate unprotected backend access and DoS vulnerability.	Valid	The usernames may or may not be same as django admin credentials. The usernames are diisplayed as internal app names and have absolutely no relation with django login. Hence the assumption that you can bruteforce the admin username is false. Our deployment uses middleware and rate-limiting rules at the load-balancer level to mitigate brute-force attempts.	The rebuttal is wrong. The said Bug is for DoS attack. Kindly read the whole PoC
+1123	G16 noFCSgiven	Security	Denial of Service	API flood targeting database-backed endpoints causes cascading backend failure. 7 screenshots showing backend impact, data-path degradation, and service unavailability.	Invalid	Complete POC is provided. Take a look at them please.
+Changed: 24 Apr, 12:10 am
+📜 1 version(s)	no poc given
+Changed: 23 Apr, 12:15 pm
+📜 1 version(s)
+1218	G18 Team STFU	Security	Denial of Service	Complaint endpoint accepts large file attachments without proper limits. High-rate flood with large payloads causes service degradation and storage pressure.	Valid	We have implemented size limit of 5MB for complaint endpoints.	Rebuttal not accepted, because attack was sucessfully carried out.
+Size was for one complaint - Not preventing users from filing multiple complaints
+
+hence, change the verdict to ACCEPTED
+Changed: 22 Apr, 12:10 pm
+📜 1 version(s)
+1219	G18 Team STFU	Security	Authentication/Access Control	Sequential user ID enumeration via authenticated IDOR exposes PII for all 19 users including names, emails, and roles. No authorization check on profile access endpoint.	Invalid	Access to other user profiles is an intended feature of the platform to enable networking. The system ensures that only information explicitly made visible by the profile owner is accessible, while sensitive or critical data remains protected.	Agreed with "INVALID"
+Changed: 23 Apr, 10:05 am
+📜 2 version(s)
+1220	G18 Team STFU	Security	CSRF (Cross-Site Request Forgery)	Missing X-Frame-Options and CSP frame-ancestors headers allow the application to be framed. Working iframe PoC demonstrates the page can be embedded in an attacker-controlled site for UI redress attacks.	Valid	Bug is valid but No actual Exploitation	Exploitation done, documented and presented. 
+Please read full PoC report.
+Last screenshot shows "After toggling visibility: the FindIT “Secure Access” login page is rendered
+inside the iframe, showing the email and password fields and “Enter the Vault” button
+— fully interactive and frameable by an attacker."
+
+Given the project scope is limited to be ethical - I cannot commit crime"
+
+hence, change the verdict to ACCEPTED
+Changed: 22 Apr, 12:10 pm
+📜 1 version(s)
+1257	G19 G19	Security	Denial of Service	High-rate API flood causes complete service denial. 5 screenshots document failure metrics, outage evidence, and service degradation timeline.	Valid		
+1301	G20 Targaryens	Security	Denial of Service	Rapid file upload flood targeting upload endpoint causes service degradation and storage pressure. Upload failures and service disruption documented.	Valid	The reported issue appears to be speculative and does not demonstrate a valid security vulnerability in its current form.  Additionally, the report does not outline a clear attack scenario or methodology that an attacker could realistically follow. As a result, the claim remains hypothetical rather than a confirmed issue, and without verifiable evidence or demonstrated impact, it cannot be considered a valid vulnerability. Ok marked valid.
+Changed: 24 Apr, 07:45 pm
+📜 1 version(s)	"The reported issue appears to be speculative and does not demonstrate a valid security vulnerability in its current form.  Additionally, the report does not outline a clear attack scenario or methodology that an attacker could realistically follow. As a result, the claim remains hypothetical rather than a confirmed issue, and without verifiable evidence or demonstrated impact, it cannot be considered a valid vulnerability."
+Rebuttal from Group 20 is naive. Seems they haven't looked at PoC provided.
+The PoC shows :
+1. Complete process to reproduce bugs.
+2. Screenshots taken from different IP address during the DoS  attack was taking place,
+3. Script used to carry out attacks.
+4. Root Cause Analysis
+5. Remediation measures
+
+Claiming such an exhaustive report with proof a speculation is desparate attempt under pressure to avoid losing marks.
+
+VERDICT should be changed to "Valid".
+Changed: 22 Apr, 12:10 pm
+📜 2 version(s)
+1436	G22 Best Team 2.0	Security	Denial of Service	Simultaneous flood on FastAPI backend (port 8010) and nginx (port 443) causes dual-service failure. Documented with simultaneous failure evidence.	Valid		
+1513	G23 Damera Corp	Security	Denial of Service	Rate limiter bypass allows sustained API flood causing service denial. 7 screenshots with health checks, requests-per-second metrics, and failure evidence documenting complete service outage.	Valid		
+1514	G23 Damera Corp	Security	CSRF (Cross-Site Request Forgery)	Login page can be framed in an attacker-controlled iframe due to missing X-Frame-Options header. Working PoC HTML page demonstrates the page rendered inside an iframe, enabling UI redress attacks.	Invalid	The claim of credential harvesting is misleading. While UI redressing can trick users into interacting with the legitimate application, the attacker cannot access or intercept credentials due to browser same-origin protections.
+Changed: 22 Apr, 05:05 pm
+📜 1 version(s)	⚠Reply to rebuttal needed
+1521	G23 Damera Corp	Functionality	Authentication/Access Control	Admin registration is blocked and no admin credentials provided for testing. JWT analysis shows admin role exists but is inaccessible to testers, preventing verification of admin features.	Invalid	Others have emailed for admin access this is not a bug
+Changed: 22 Apr, 05:10 pm
+📜 1 version(s)	AGREED with Invalid
+Changed: 23 Apr, 09:50 am
+📜 1 version(s)
+1573	G24 The Null Pointers	Security	Denial of Service	Multi-vector API flood causes complete service denial across all user roles. 10 screenshots capturing browser failures, error responses, and health check degradation. Server becomes unresponsive for extended period.	Valid	The issue demonstrates a denial-of-service condition achieved through high-volume, multi-vector traffic flooding (~12,000+ RPS and ~30,000 concurrent connections). This does not indicate an application-level vulnerability but rather expected behavior under extreme load without infrastructure protections such as rate limiting, load balancing, or DDoS mitigation. The attack requires unrealistic resources and is not reproducible under normal usage conditions. Therefore, it is considered an infrastructure limitation and is out of scope for application security evaluation.
+Changed: 23 Apr, 01:10 pm
+📜 3 version(s)	
